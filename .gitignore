@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets
+.env
+*.key
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data — 원본 다운로드는 제외, 동결 세트(data/frozen/)는 커밋한다
+data/raw/*
+!data/raw/.gitkeep
+
+# Results — 임시·디버그 실행은 제외, 정식 측정 로그는 커밋한다
+results/runs/_scratch/
+results/runs/**/debug_*
+
+# Models / caches
+*.gguf
+.cache/
+hf_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
