@@ -1,0 +1,34 @@
+# M(EBA) Default Configuration
+# References: docs/INTERFACES.md §2, docs/SPEC.md §2, §7
+
+model:
+  tag: "qwen2.5:7b-instruct-q4_K_M" # Qwen2.5-7B-Instruct 4-bit Ollama model tag
+  temperature: 0                    # Greedily decode (ADR-0003) - DO NOT CHANGE
+  num_ctx: 8192                     # Context window limit
+  keep_alive: "5m"                  # Ollama process memory keep-alive
+
+budget:
+  max_calls: 4                      # Max LLM calls per question across pipeline
+  max_requery: 2                    # Max requery/follow-up retrieval rounds
+
+cap:
+  first: 512                        # Output cap for first call (router / direct math)
+  finalize: 128                     # Output cap for finalize step after calculator
+  judge: 256                        # Output cap for evidence judgment + answer
+  retry_multiplier: 2               # Output cap multiplier on truncation retry (1 attempt)
+
+retrieval:
+  k: 3                              # Initial paragraph retrieval count (to be confirmed in Week 1)
+
+compress:
+  m: 3                              # Sentence window retention count (to be confirmed in Week 1)
+  window: 1                         # Context window size around target sentence (+/- 1 sentence)
+
+p1:
+  max_steps: 7                      # Max steps for P1 ReAct baseline
+
+run:
+  timeout_s: 120                    # Per-question timeout in seconds
+
+data:
+  seed: 42                          # Random seed for sampling and reproducibility
