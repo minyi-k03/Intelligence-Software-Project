@@ -2,14 +2,14 @@
 
 References:
 - docs/INTERFACES.md §2
-- AGENTS.md (temperature must be 0, no hardcoded values in pipeline code)
+- AGENTS.md (temperature must be 0, no hardcoded model tag/temperature/num_ctx in code)
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 try:
     import yaml
@@ -18,8 +18,15 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_REL_CONFIG = Path("configs/default.yaml")
-_VALID_SECTIONS = frozenset(
-    {"model", "budget", "cap", "retrieval", "compress", "p1", "run", "data"}
+_REQUIRED_SECTIONS = (
+    "model",
+    "budget",
+    "cap",
+    "retrieval",
+    "compress",
+    "p1",
+    "run",
+    "data",
 )
 
 
@@ -30,10 +37,10 @@ def _is_valid_int(val: Any) -> bool:
 
 @dataclass
 class ModelConfig:
-    tag: str = "qwen2.5:7b-instruct-q4_K_M"
-    temperature: int = 0
-    num_ctx: int = 8192
-    keep_alive: str = "5m"
+    tag: str
+    temperature: int
+    num_ctx: int
+    keep_alive: Union[str, int]
 
     def __post_init__(self) -> None:
         if not self.tag or not isinstance(self.tag, str):
@@ -44,14 +51,22 @@ class ModelConfig:
             )
         if not _is_valid_int(self.num_ctx) or self.num_ctx <= 0:
             raise ValueError(f"model.num_ctx must be a positive int. Got: {self.num_ctx!r}")
-        if not self.keep_alive or not isinstance(self.keep_alive, str):
-            raise ValueError(f"model.keep_alive must be a non-empty string. Got: {self.keep_alive!r}")
+        if isinstance(self.keep_alive, bool):
+            raise ValueError(f"model.keep_alive must be a string or int, not bool. Got: {self.keep_alive!r}")
+        if isinstance(self.keep_alive, str):
+            if not self.keep_alive.strip():
+                raise ValueError("model.keep_alive string cannot be empty.")
+        elif isinstance(self.keep_alive, int):
+            if self.keep_alive < -1:
+                raise ValueError(f"model.keep_alive int must be >= -1. Got: {self.keep_alive!r}")
+        else:
+            raise ValueError(f"model.keep_alive must be str or int. Got: {self.keep_alive!r}")
 
 
 @dataclass
 class BudgetConfig:
-    max_calls: int = 4
-    max_requery: int = 2
+    max_calls: int
+    max_requery: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.max_calls) or self.max_calls <= 0:
@@ -62,10 +77,10 @@ class BudgetConfig:
 
 @dataclass
 class CapConfig:
-    first: int = 512
-    finalize: int = 128
-    judge: int = 256
-    retry_multiplier: int = 2
+    first: int
+    finalize: int
+    judge: int
+    retry_multiplier: int
 
     def __post_init__(self) -> None:
         for name in ("first", "finalize", "judge", "retry_multiplier"):
@@ -76,7 +91,7 @@ class CapConfig:
 
 @dataclass
 class RetrievalConfig:
-    k: int = 3
+    k: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.k) or self.k <= 0:
@@ -85,8 +100,8 @@ class RetrievalConfig:
 
 @dataclass
 class CompressConfig:
-    m: int = 3
-    window: int = 1
+    m: int
+    window: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.m) or self.m <= 0:
@@ -97,7 +112,7 @@ class CompressConfig:
 
 @dataclass
 class P1Config:
-    max_steps: int = 7
+    max_steps: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.max_steps) or self.max_steps <= 0:
@@ -106,7 +121,7 @@ class P1Config:
 
 @dataclass
 class RunConfig:
-    timeout_s: int = 120
+    timeout_s: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.timeout_s) or self.timeout_s <= 0:
@@ -115,7 +130,7 @@ class RunConfig:
 
 @dataclass
 class DataConfig:
-    seed: int = 42
+    seed: int
 
     def __post_init__(self) -> None:
         if not _is_valid_int(self.seed):
@@ -126,14 +141,14 @@ class DataConfig:
 class Settings:
     """Unified configuration for M(EBA) pipelines and evaluations."""
 
-    model: ModelConfig = field(default_factory=ModelConfig)
-    budget: BudgetConfig = field(default_factory=BudgetConfig)
-    cap: CapConfig = field(default_factory=CapConfig)
-    retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
-    compress: CompressConfig = field(default_factory=CompressConfig)
-    p1: P1Config = field(default_factory=P1Config)
-    run: RunConfig = field(default_factory=RunConfig)
-    data: DataConfig = field(default_factory=DataConfig)
+    model: ModelConfig
+    budget: BudgetConfig
+    cap: CapConfig
+    retrieval: RetrievalConfig
+    compress: CompressConfig
+    p1: P1Config
+    run: RunConfig
+    data: DataConfig
 
     def to_dict(self) -> dict[str, Any]:
         """Convert settings to a nested dictionary snapshot (for RUN_META.json)."""
@@ -179,8 +194,36 @@ def _resolve_config_path(config_path: Optional[str | Path] = None) -> Path:
     )
 
 
+def _build_section(cls: type, section_name: str, data: Any) -> Any:
+    """Validate and instantiate a required configuration section dataclass."""
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Config section '{section_name}' must be a mapping/dict, got {type(data).__name__}"
+        )
+
+    expected_keys = {f.name for f in fields(cls)}
+    provided_keys = set(data.keys())
+
+    missing_keys = sorted(expected_keys - provided_keys)
+    if missing_keys:
+        raise ValueError(
+            f"Missing required keys in '{section_name}': {missing_keys}"
+        )
+
+    unknown_keys = sorted(provided_keys - expected_keys)
+    if unknown_keys:
+        raise ValueError(
+            f"Unknown keys in '{section_name}': {unknown_keys}"
+        )
+
+    return cls(**data)
+
+
 def load_settings(config_path: Optional[str | Path] = None) -> Settings:
-    """Load and validate configuration from a YAML file.
+    """Load and strictly validate configuration from a YAML file.
+
+    All sections and keys defined in docs/INTERFACES.md §2 are required;
+    no hardcoded defaults are substituted if any section or key is missing.
 
     Args:
         config_path: Path to YAML config file. If None, defaults to 'configs/default.yaml'.
@@ -190,13 +233,13 @@ def load_settings(config_path: Optional[str | Path] = None) -> Settings:
 
     Raises:
         FileNotFoundError: If the configuration file does not exist.
-        ValueError: If configuration values or section names are invalid.
+        ValueError: If the YAML is empty, has missing/unknown sections, or invalid values.
     """
     path = _resolve_config_path(config_path)
     content = path.read_text(encoding="utf-8")
 
     if yaml is not None:
-        raw = yaml.safe_load(content) or {}
+        raw = yaml.safe_load(content)
     else:
         import json
 
@@ -205,22 +248,31 @@ def load_settings(config_path: Optional[str | Path] = None) -> Settings:
         except Exception:
             raw = _simple_yaml_parse(content)
 
-    if not isinstance(raw, dict):
-        raise ValueError(f"Configuration root must be a mapping/dict, got {type(raw).__name__}")
+    if raw is None or not isinstance(raw, dict):
+        raise ValueError(
+            f"Configuration file '{path}' must define a non-empty YAML mapping, got {type(raw).__name__}"
+        )
 
-    unknown_sections = set(raw.keys()) - _VALID_SECTIONS
+    required_set = set(_REQUIRED_SECTIONS)
+    provided_set = set(raw.keys())
+
+    missing_sections = sorted(required_set - provided_set)
+    if missing_sections:
+        raise ValueError(f"Missing required config sections: {missing_sections}")
+
+    unknown_sections = sorted(provided_set - required_set)
     if unknown_sections:
-        raise ValueError(f"Unknown top-level config sections: {sorted(unknown_sections)}")
+        raise ValueError(f"Unknown top-level config sections: {unknown_sections}")
 
     return Settings(
-        model=ModelConfig(**(raw.get("model") or {})),
-        budget=BudgetConfig(**(raw.get("budget") or {})),
-        cap=CapConfig(**(raw.get("cap") or {})),
-        retrieval=RetrievalConfig(**(raw.get("retrieval") or {})),
-        compress=CompressConfig(**(raw.get("compress") or {})),
-        p1=P1Config(**(raw.get("p1") or {})),
-        run=RunConfig(**(raw.get("run") or {})),
-        data=DataConfig(**(raw.get("data") or {})),
+        model=_build_section(ModelConfig, "model", raw["model"]),
+        budget=_build_section(BudgetConfig, "budget", raw["budget"]),
+        cap=_build_section(CapConfig, "cap", raw["cap"]),
+        retrieval=_build_section(RetrievalConfig, "retrieval", raw["retrieval"]),
+        compress=_build_section(CompressConfig, "compress", raw["compress"]),
+        p1=_build_section(P1Config, "p1", raw["p1"]),
+        run=_build_section(RunConfig, "run", raw["run"]),
+        data=_build_section(DataConfig, "data", raw["data"]),
     )
 
 
@@ -251,14 +303,14 @@ def _simple_yaml_parse(text: str) -> dict[str, Any]:
         line = line.split("#")[0].rstrip()
         if not line:
             continue
-        if not line.startswith(" ") and line.endswith(":"):
+        if not line[0].isspace() and line.endswith(":"):
             current_section = line[:-1].strip()
             result[current_section] = {}
-        elif line.startswith("  ") and ":" in line and current_section:
+        elif line[0].isspace() and ":" in line and current_section:
             key, val = line.split(":", 1)
             key = key.strip()
             val = val.strip().strip('"').strip("'")
-            if val.lstrip("-").isdigit():
+            if val.lstrip("-").isdigit() and val.count("-") <= 1:
                 val_typed: Any = int(val)
             elif val.replace(".", "", 1).lstrip("-").isdigit() and val.count(".") == 1:
                 val_typed = float(val)
@@ -269,5 +321,7 @@ def _simple_yaml_parse(text: str) -> dict[str, Any]:
             else:
                 val_typed = val
             result[current_section][key] = val_typed
+        else:
+            raise ValueError(f"Invalid YAML syntax in fallback parser: {line!r}")
 
     return result

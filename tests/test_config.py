@@ -31,7 +31,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.model.tag, "qwen2.5:7b-instruct-q4_K_M")
         self.assertEqual(settings.model.temperature, 0)
         self.assertEqual(settings.model.num_ctx, 8192)
-        self.assertEqual(settings.model.keep_alive, "5m")
+        self.assertEqual(settings.model.keep_alive, -1)
 
         self.assertEqual(settings.budget.max_calls, 4)
         self.assertEqual(settings.budget.max_requery, 2)
@@ -48,26 +48,58 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.run.timeout_s, 120)
         self.assertEqual(settings.data.seed, 42)
 
+    def test_no_hardcoded_dataclass_defaults(self):
+        """Config dataclasses must require explicit values (no hardcoded defaults in code)."""
+        with self.assertRaises(TypeError):
+            ModelConfig()  # type: ignore
+        with self.assertRaises(TypeError):
+            Settings()  # type: ignore
+
     def test_temperature_must_be_zero_rule(self):
         """AGENTS.md absolute rule: temperature must be 0 (and not bool False)."""
         with self.assertRaises(ValueError):
-            ModelConfig(temperature=1)
+            ModelConfig(tag="dummy-tag", temperature=1, num_ctx=8192, keep_alive=-1)
         with self.assertRaises(ValueError):
-            ModelConfig(temperature=False)  # type: ignore
+            ModelConfig(tag="dummy-tag", temperature=False, num_ctx=8192, keep_alive=-1)  # type: ignore
 
-    def test_missing_or_invalid_config_raises(self):
-        """Missing config path or unknown top-level section must raise immediately."""
+    def test_missing_empty_or_partial_config_raises(self):
+        """Empty YAML, missing sections, missing keys, or unknown sections must raise immediately."""
         with self.assertRaises(FileNotFoundError):
             load_settings("configs/nonexistent_config_file.yaml")
 
+        # Empty YAML
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
-            tf.write("unknown_section:\n  foo: 1\n")
-            temp_path = Path(tf.name)
+            tf.write("")
+            empty_path = Path(tf.name)
         try:
             with self.assertRaises(ValueError):
-                load_settings(temp_path)
+                load_settings(empty_path)
         finally:
-            temp_path.unlink(missing_ok=True)
+            empty_path.unlink(missing_ok=True)
+
+        # Missing section (only model provided)
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+            tf.write("model:\n  tag: dummy\n  temperature: 0\n  num_ctx: 8192\n  keep_alive: -1\n")
+            partial_section_path = Path(tf.name)
+        try:
+            with self.assertRaises(ValueError):
+                load_settings(partial_section_path)
+        finally:
+            partial_section_path.unlink(missing_ok=True)
+
+        # Missing key inside a section
+        full_text = Path("configs/default.yaml").read_text(encoding="utf-8")
+        missing_key_text = "\n".join(
+            line for line in full_text.splitlines() if "keep_alive:" not in line
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+            tf.write(missing_key_text)
+            missing_key_path = Path(tf.name)
+        try:
+            with self.assertRaises(ValueError):
+                load_settings(missing_key_path)
+        finally:
+            missing_key_path.unlink(missing_ok=True)
 
     def test_settings_dot_key_and_dict_snapshot(self):
         """Test dotpath property lookup and RUN_META snapshot serialization."""
@@ -78,10 +110,11 @@ class TestConfig(unittest.TestCase):
 
         snap = settings.to_dict()
         self.assertEqual(snap["model"]["temperature"], 0)
+        self.assertEqual(snap["model"]["keep_alive"], -1)
         self.assertEqual(snap["budget"]["max_calls"], 4)
 
     def test_get_llm_kwargs_and_factory_binding(self):
-        """Verify that LLM kwargs and factory strictly derive from settings without hardcoding."""
+        """Verify that LLM kwargs and factory strictly derive from settings without fallback."""
         settings = load_settings("configs/default.yaml")
         cb = MetricsCallbackHandler()
 
@@ -95,13 +128,17 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(kwargs["model"], "qwen2.5:7b-instruct-q4_K_M")
         self.assertEqual(kwargs["temperature"], 0)
         self.assertEqual(kwargs["num_ctx"], 8192)
-        self.assertEqual(kwargs["keep_alive"], "5m")
+        self.assertEqual(kwargs["keep_alive"], -1)
         self.assertEqual(kwargs["num_predict"], 256)
         self.assertEqual(kwargs["format"], {"type": "object"})
         self.assertEqual(kwargs["callbacks"], [cb])
 
         with self.assertRaises(ValueError):
             get_llm_kwargs(settings=settings, num_predict=0)
+
+        with patch("src.config.llm.ChatOllama", None):
+            with self.assertRaises(RuntimeError):
+                create_chat_ollama(settings, num_predict=512)
 
         with patch("src.config.llm.ChatOllama") as mock_cls:
             mock_cls.return_value = "mock_llm_instance"
@@ -117,7 +154,6 @@ class TestConfig(unittest.TestCase):
         """Verify token accounting for both llm_output and langchain-ollama AIMessage metadata."""
         handler = MetricsCallbackHandler(current_step="judge", cap=256, is_retry=False)
 
-        # Case 1: langchain-ollama AIMessage style (usage_metadata + response_metadata)
         handler.on_chat_model_start({}, [[]], run_id="run-1")
         mock_ai_msg = SimpleNamespace(
             content='{"reasoning": "Sufficient.", "decision": "ANSWER", "missing": "", "answer": "Paris"}',
@@ -164,6 +200,29 @@ class TestConfig(unittest.TestCase):
 
         self.assertTrue(handler.calls[0].truncated)
         self.assertFalse(handler.calls[0].parse_ok)
+
+    def test_metrics_callback_auto_extracts_invoked_cap(self):
+        """Verify that num_predict from invocation_params overrides/populates CallRecord.cap."""
+        handler = MetricsCallbackHandler(current_step="router")
+        handler.on_chat_model_start(
+            {},
+            [[]],
+            run_id="run-inv-cap",
+            invocation_params={"options": {"num_predict": 512}},
+        )
+        mock_ai_msg = SimpleNamespace(
+            content="math route",
+            usage_metadata={"input_tokens": 60, "output_tokens": 512},
+            response_metadata={"done_reason": "length"},
+        )
+        mock_resp = SimpleNamespace(
+            generations=[[SimpleNamespace(message=mock_ai_msg, text="", generation_info=None)]],
+            llm_output=None,
+        )
+        handler.on_llm_end(mock_resp, run_id="run-inv-cap")
+
+        self.assertEqual(handler.calls[0].cap, 512)
+        self.assertTrue(handler.calls[0].truncated)
 
     def test_metrics_callback_retry_accounting_and_pipeline_result(self):
         """Verify that retries are excluded from n_budget_calls and PipelineResult serializes cleanly."""

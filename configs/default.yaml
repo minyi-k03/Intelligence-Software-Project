@@ -5,7 +5,7 @@ model:
   tag: "qwen2.5:7b-instruct-q4_K_M" # Qwen2.5-7B-Instruct 4-bit Ollama model tag
   temperature: 0                    # Greedily decode (ADR-0003) - DO NOT CHANGE
   num_ctx: 8192                     # Context window limit
-  keep_alive: "5m"                  # Ollama process memory keep-alive
+  keep_alive: -1                    # Keep model pinned in memory during session (EVALUATION §4)
 
 budget:
   max_calls: 4                      # Max LLM calls per question across pipeline

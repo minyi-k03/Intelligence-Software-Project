@@ -25,6 +25,32 @@ except ImportError:
         pass
 
 
+def _extract_invoked_cap(
+    serialized: Optional[dict[str, Any]],
+    kwargs: dict[str, Any],
+) -> Optional[int]:
+    """Extract num_predict output cap from LangChain invocation_params or serialized kwargs."""
+    inv_params = kwargs.get("invocation_params")
+    if isinstance(inv_params, dict):
+        val = inv_params.get("num_predict")
+        if isinstance(val, int) and not isinstance(val, bool) and val > 0:
+            return val
+        options = inv_params.get("options")
+        if isinstance(options, dict):
+            opt_val = options.get("num_predict")
+            if isinstance(opt_val, int) and not isinstance(opt_val, bool) and opt_val > 0:
+                return opt_val
+
+    if isinstance(serialized, dict):
+        ser_kwargs = serialized.get("kwargs")
+        if isinstance(ser_kwargs, dict):
+            val = ser_kwargs.get("num_predict")
+            if isinstance(val, int) and not isinstance(val, bool) and val > 0:
+                return val
+
+    return None
+
+
 def _extract_tokens_and_reason(
     mapping: dict[str, Any],
 ) -> tuple[Optional[int], Optional[int], Optional[str]]:
@@ -81,6 +107,8 @@ class MetricsCallbackHandler(BaseCallbackHandler):
 
         self._start_time: float = 0.0
         self._start_times: dict[Any, float] = {}
+        self._run_caps: dict[Any, Optional[int]] = {}
+        self._last_invoked_cap: Optional[int] = None
         self.calls: list[CallRecord] = []
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
@@ -104,6 +132,16 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         if self.calls:
             self.calls[-1].parse_ok = parse_ok
 
+    def _record_start(self, serialized: Optional[dict[str, Any]], kwargs: dict[str, Any]) -> None:
+        now = time.perf_counter()
+        self._start_time = now
+        inv_cap = _extract_invoked_cap(serialized, kwargs)
+        self._last_invoked_cap = inv_cap
+        run_id = kwargs.get("run_id")
+        if run_id is not None:
+            self._start_times[run_id] = now
+            self._run_caps[run_id] = inv_cap
+
     def on_llm_start(
         self,
         serialized: dict[str, Any],
@@ -111,11 +149,7 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Fires when an LLM / Chat model begins generation."""
-        now = time.perf_counter()
-        self._start_time = now
-        run_id = kwargs.get("run_id")
-        if run_id is not None:
-            self._start_times[run_id] = now
+        self._record_start(serialized, kwargs)
 
     def on_chat_model_start(
         self,
@@ -124,27 +158,29 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Fires when a Chat model begins generation."""
-        now = time.perf_counter()
-        self._start_time = now
-        run_id = kwargs.get("run_id")
-        if run_id is not None:
-            self._start_times[run_id] = now
+        self._record_start(serialized, kwargs)
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
         """Clean up timer state if an LLM call raises an exception."""
         run_id = kwargs.get("run_id")
         if run_id is not None:
             self._start_times.pop(run_id, None)
+            self._run_caps.pop(run_id, None)
         self._start_time = 0.0
+        self._last_invoked_cap = None
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Fires when an LLM / Chat model completes generation."""
         run_id = kwargs.get("run_id")
         start = self._start_times.pop(run_id, None) if run_id is not None else None
+        inv_cap = self._run_caps.pop(run_id, None) if run_id is not None else self._last_invoked_cap
         if start is None:
             start = self._start_time
         latency_s = time.perf_counter() - start if start > 0 else 0.0
         self._start_time = 0.0
+        self._last_invoked_cap = None
+
+        effective_cap = inv_cap if inv_cap is not None else self.cap
 
         in_tok: Optional[int] = None
         out_tok: Optional[int] = None
@@ -221,7 +257,7 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         is_truncated = False
         if done_reason in ("length", "max_tokens"):
             is_truncated = True
-        if self.cap is not None and output_tokens >= self.cap:
+        if effective_cap is not None and output_tokens >= effective_cap:
             is_truncated = True
 
         self.total_input_tokens += input_tokens
@@ -229,7 +265,7 @@ class MetricsCallbackHandler(BaseCallbackHandler):
 
         record = CallRecord(
             step=self.current_step,
-            cap=self.cap,
+            cap=effective_cap,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             truncated=is_truncated,
@@ -266,4 +302,6 @@ class MetricsCallbackHandler(BaseCallbackHandler):
         self.total_output_tokens = 0
         self._start_time = 0.0
         self._start_times.clear()
+        self._run_caps.clear()
+        self._last_invoked_cap = None
         self.parse_ok = None

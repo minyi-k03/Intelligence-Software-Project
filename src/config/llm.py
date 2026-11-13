@@ -1,7 +1,7 @@
 """Factory for creating ChatOllama instances strictly bound to configurations.
 
 References:
-- AGENTS.md (no hardcoded model tag, temperature=0, num_ctx from configs)
+- AGENTS.md (no hardcoded model tag, temperature=0, num_ctx from configs; use langchain-ollama)
 - docs/INTERFACES.md §2
 - docs/IMPLEMENTATION_PLAN.md §5 (PR B-1)
 """
@@ -14,14 +14,9 @@ from typing import Any, Optional
 from src.config.settings import Settings, get_settings
 
 try:
-    # Prefer new langchain-ollama package
     from langchain_ollama import ChatOllama
 except ImportError:
-    try:
-        # Fallback to langchain-community
-        from langchain_community.chat_models import ChatOllama  # type: ignore
-    except ImportError:
-        ChatOllama = None  # type: ignore
+    ChatOllama = None  # type: ignore
 
 
 def get_llm_kwargs(
@@ -83,10 +78,10 @@ def create_chat_ollama(
         base_url: Ollama base endpoint URL.
 
     Returns:
-        ChatOllama: Configured LangChain chat model.
+        ChatOllama: Configured LangChain chat model from langchain-ollama.
 
     Raises:
-        RuntimeError: If langchain-ollama or langchain-community is not installed.
+        RuntimeError: If langchain-ollama is not installed.
         ValueError: If temperature is not 0 or num_predict is invalid.
     """
     kwargs = get_llm_kwargs(
@@ -99,8 +94,8 @@ def create_chat_ollama(
 
     if ChatOllama is None:
         raise RuntimeError(
-            "Neither langchain-ollama nor langchain-community is installed. "
-            "Please run: pip install -r requirements.txt"
+            "langchain-ollama is required (fallback to langchain-community is disabled "
+            "to keep token/truncation metadata consistent). Install via: pip install -r requirements.txt"
         )
 
     return ChatOllama(**kwargs)
