@@ -6,7 +6,7 @@
 |---|---|---|
 | `common/` | A · B · C · D | 파이프라인 공통 타입 (`types.py`: `CallRecord`, `PipelineResult`) |
 | `config/` | B | 설정 로더 (`settings.py`), `ChatOllama` 생성 함수 (`llm.py`), 호출 수·토큰 콜백 (`callbacks.py`) |
-| `tools/` | B | BM25 검색 (`bm25_search.py`), 계산기 (`calculator.py`), 공통 오류 처리 |
+| `tools/` | B | 공용 토크나이저 (`tokenizer.py`), BM25 검색 (`bm25_search.py`), 계산기 (`calculator.py`), 공통 오류 처리 |
 | `baselines/` | B | P0 · P0-raw (`p0.py`), P1 ReAct (`p1_react.py`), 공통 답 형식 지시문 (`prompts.py`) |
 | `meba/` | A · C · D | 아래 표 |
 | `meba/conditional/` | C · D | 근거 장부 상세화 (`ledger.py`, C), 간결 출력 (`concise.py`, D), 동적 압축량 (`dynamic_m.py`, C) |

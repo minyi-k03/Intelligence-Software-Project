@@ -82,7 +82,7 @@ P1과 M이 **같은 구현**을 씁니다. 오류도 같은 방식으로 처리�
 | BM25 검색 | `query: str`, `k: int` | 문단 리스트 `[{doc_id, title, sentences, text, score}]` (점수 내림차순) |
 | 계산기 | `expression: str` | 결과 문자열. 실패 시 `"ERROR: <사유>"` |
 
-BM25 토크나이저·불용어 처리는 TBD(B). 단, 검색과 압축(C)이 같은 토크나이저를 써야 합니다.
+BM25 공용 토크나이저(`src/tools/tokenizer.py`): `tokenize(text: str, *, remove_stopwords: bool = True) -> list[str]` (NFKC 정규화·소문자·숫자 쉼표 제거·`[^\W_]+` 단어 추출·영어 불용어 `ENGLISH_STOPWORDS` 제거 및 전부 불용어 시 폴백), 공유 상수 `BM25_K1 = 1.5`, `BM25_B = 0.75`. 검색(B)과 압축(C)이 이 토크나이저와 상수를 함께 씁니다.
 
 ---
 
