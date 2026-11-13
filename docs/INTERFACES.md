@@ -54,10 +54,10 @@
 
 | 키 | 값 | 출처 |
 |---|---|---|
-| `model.tag` | TBD (Qwen2.5-7B-Instruct 4-bit의 Ollama 태그, B가 `ollama list`로 확인해 확정) | SPEC §2 |
+| `model.tag` | `qwen2.5:7b-instruct-q4_K_M` (Qwen2.5-7B-Instruct 4-bit Ollama 태그) | SPEC §2 |
 | `model.temperature` | 0 | ADR-0003 |
 | `model.num_ctx` | 8192 | SPEC §2 |
-| `model.keep_alive` | TBD (측정 중 고정) | EVALUATION §4 |
+| `model.keep_alive` | `-1` (측정 세션 중 메모리 상시 유지) | EVALUATION §4 |
 | `budget.max_calls` | 4 | SPEC §7 |
 | `budget.max_requery` | 2 | SPEC §7 |
 | `cap.first` | 512 | SPEC §7 |

@@ -1,0 +1,13 @@
+# Core dependencies
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-ollama>=0.1.0
+langgraph>=0.2.0
+pydantic>=2.0.0
+pyyaml>=6.0
+
+# Information Retrieval and Tools
+rank-bm25>=0.2.2
+
+# Testing & Utilities
+pytest>=7.0.0
