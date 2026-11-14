@@ -28,16 +28,20 @@
 | `answer_kind` | str | `text` \| `numeric` \| `unanswerable` — 채점 방식 선택용 |
 | `gold_doc_ids` | list[str] | 정답 근거 문단의 `doc_id` (GSM8K는 빈 리스트) |
 | `supporting_facts` | list[[str, int]] | HotpotQA 정답 근거 문장 `[title, 문장 번호]` (근거 문장 보존율 측정용) |
-| `source_id` | str | 원본 데이터셋의 문항 ID (추적용) |
+| `source_id` | str | 원본 데이터셋의 문항 ID (추적용). GSM8K는 원본에 ID가 없어 `gsm8k-test-<test split 행 번호>` |
+
+- `qid` 번호는 유형별로 평가 세트 → 개발 세트 순서로 이어 붙인다(평가 `0000`~`0039`, 개발 `0040`~`0059`). 두 세트에서 `qid`가 겹치지 않는다.
+- SQuAD 2.0 답할 수 없음 문항의 `gold_doc_ids`에는 원래 문맥(함정 문단)을 기록한다.
+- GSM8K `answers`는 `####` 뒤 값에서 쉼표를 뺀 문자열이다.
 
 ### 1.2 코퍼스 문단 (`corpus.jsonl`)
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `doc_id` | str | 예: `hp::<title>`, `sq::<article>::<paragraph_idx>` (TBD: A가 동결 스크립트에서 확정) |
+| `doc_id` | str | `hp::<title>` (같은 제목에 본문이 다른 문단이 있으면 `hp::<title>::2`, …) · `sq::<article title>::<paragraph_idx>` (idx = 같은 제목 안에서 데이터셋에 등장한 순서) |
 | `title` | str | 문단 제목 (압축의 문장 창에 붙인다) |
-| `sentences` | list[str] | 문장 단위로 나눈 본문. HotpotQA는 원본 문장 분할을 그대로 쓴다 |
-| `text` | str | `sentences`를 이어 붙인 본문 (BM25 문단 검색용) |
+| `sentences` | list[str] | 문장 단위로 나눈 본문. HotpotQA는 원본 문장 분할을 그대로 쓰고(각 문장 앞뒤 공백만 제거, 번호는 `supporting_facts`와 같다), SQuAD 2.0은 정규식 + 약어 보호로 나눈다(`scripts/freeze_data.py`의 `split_sentences`) |
+| `text` | str | `sentences`를 공백 한 칸으로 이어 붙인 본문 (BM25 문단 검색용) |
 | `origin` | str | `hotpotqa` \| `squad2` |
 
 중복 문단(같은 제목·같은 본문)은 하나로 합칩니다.
@@ -69,7 +73,7 @@
 | `compress.window` | 1 (앞뒤 1문장) | SPEC §5 |
 | `p1.max_steps` | 7 | SPEC §3 |
 | `run.timeout_s` | 120 | EVALUATION §4 |
-| `data.seed` | TBD (동결 때 A가 정해 MANIFEST에 기록) | ADR-0001 |
+| `data.seed` | 20261113 (`MANIFEST.json`의 `seed`와 같아야 한다) | ADR-0001 |
 
 ---
 

@@ -76,7 +76,9 @@ M(EBA)는 Qwen2.5-7B-Instruct(4-bit)를 그대로 두고 하네스만 바꿔, �
 > 코드가 들어오면 채웁니다. B(기반)와 A(원클릭 노트북) 담당.
 
 ```bash
-# 1) 의존성 설치          — TODO
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"                             # Python 3.10+ (pyproject.toml)
+# 1) 의존성 설치 — 위 두 줄
 # 2) Ollama 모델 받기       — TODO (모델 태그는 configs/ 참고)
 # 3) 검증 모드로 소수 문항 실행 — TODO
 ```
