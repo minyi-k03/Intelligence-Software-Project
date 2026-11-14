@@ -9,5 +9,9 @@ pyyaml>=6.0
 # Information Retrieval and Tools
 rank-bm25>=0.2.2
 
+# Data freeze (scripts/freeze_data.py) and statistics (McNemar exact test)
+datasets>=3.0
+scipy>=1.11
+
 # Testing & Utilities
 pytest>=7.0.0

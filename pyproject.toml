@@ -1,0 +1,6 @@
+# 의존성은 requirements.txt 한 곳에서만 관리한다. 이 파일은 도구 설정(pytest)만 담는다.
+# Python 3.10+ 필요 (AGENTS.md).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]   # `from src.eval.scorer import ...` 형태로 import (루트 conftest.py와 함께)

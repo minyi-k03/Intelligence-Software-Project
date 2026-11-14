@@ -1,0 +1,94 @@
+{
+  "seed": 20261113,
+  "datasets": {
+    "hotpotqa": {
+      "hf_id": "hotpotqa/hotpot_qa",
+      "config": "distractor",
+      "split": "validation",
+      "revision": "1908d6afbbead072334abe2965f91bd2709910ab"
+    },
+    "squad2": {
+      "hf_id": "rajpurkar/squad_v2",
+      "config": null,
+      "split": "validation",
+      "revision": "3ffb306f725f7d2ce8394bc1873b24868140c412"
+    },
+    "gsm8k": {
+      "hf_id": "openai/gsm8k",
+      "config": "main",
+      "split": "test",
+      "revision": "740312add88f781978c0658806c59bc2815b9866"
+    }
+  },
+  "quota": {
+    "hotpotqa": {
+      "bridge": {
+        "eval": 20,
+        "dev": 10
+      },
+      "comparison": {
+        "eval": 20,
+        "dev": 10
+      }
+    },
+    "squad2": {
+      "answerable": {
+        "eval": 20,
+        "dev": 10
+      },
+      "unanswerable": {
+        "eval": 20,
+        "dev": 10
+      }
+    },
+    "gsm8k": {
+      "None": {
+        "eval": 40,
+        "dev": 20
+      }
+    }
+  },
+  "rules": {
+    "squad2_split": "context-level (한 문맥에서 질문 1개, 평가·개발 문맥 비중복)",
+    "squad2_sentence_splitter": "regex + abbreviation guard (scripts/freeze_data.py: split_sentences)",
+    "hotpotqa_sentences": "원본 문장 분할, 각 문장 strip, text는 공백 1칸으로 이음",
+    "doc_id": {
+      "hotpotqa": "hp::<title> (같은 제목·다른 본문이면 hp::<title>::2, ...)",
+      "squad2": "sq::<article title>::<paragraph_idx> (idx = 같은 제목 안 데이터셋 등장 순서)"
+    },
+    "qid": "<type>-<4자리 번호>; 번호는 유형별로 평가 세트 → 개발 세트 순서로 이어 붙임",
+    "gold_doc_ids_squad2_unanswerable": "원래 문맥(함정 문단)을 기록한다"
+  },
+  "stats": {
+    "n_eval": 120,
+    "n_dev": 60,
+    "n_corpus": 653,
+    "corpus_by_origin": {
+      "hotpotqa": 593,
+      "squad2": 60
+    },
+    "hotpotqa_gold_paragraph_overlap_eval_dev": 0,
+    "squad2_context_overlap_eval_dev": 0,
+    "hotpotqa_title_variants": 0
+  },
+  "generator": {
+    "script": "scripts/freeze_data.py",
+    "script_sha256": "5d57e64a7a213f9286250b9374316e851f19e773031b4c92338c912396ca6780",
+    "git_head": "249c5cc3c7e80920bf979b723b47cae8095a8cae",
+    "script_dirty": false
+  },
+  "files": {
+    "eval.jsonl": {
+      "rows": 120,
+      "sha256": "44de0d8a6cf7a34ad49240fc85132d663e94953e3922952ab6067a49be0d84b2"
+    },
+    "dev.jsonl": {
+      "rows": 60,
+      "sha256": "8f18f76dd903c6d04d43bfeac6b210c271ece0da74f82ebfe097ddd661c5eb3d"
+    },
+    "corpus.jsonl": {
+      "rows": 653,
+      "sha256": "d562adc177418aa20b9d6abc2c47273901eeab875b62245d1fd074c7c12ba69f"
+    }
+  }
+}

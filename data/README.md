@@ -1,4 +1,4 @@
-# data/
+﻿# data/
 
 | 폴더 | 내용 | git |
 |---|---|---|
@@ -30,13 +30,25 @@
 
 | 파일 | 문항/문단 수 | SHA-256 |
 |---|---|---|
-| `frozen/eval.jsonl` | 120 | |
-| `frozen/dev.jsonl` | 60 | |
-| `frozen/corpus.jsonl` | | |
+| `frozen/eval.jsonl` | 120 | `44de0d8a6cf7a34ad49240fc85132d663e94953e3922952ab6067a49be0d84b2` |
+| `frozen/dev.jsonl` | 60 | `8f18f76dd903c6d04d43bfeac6b210c271ece0da74f82ebfe097ddd661c5eb3d` |
+| `frozen/corpus.jsonl` | 653 (HotpotQA 593 + SQuAD 2.0 60) | `d562adc177418aa20b9d6abc2c47273901eeab875b62245d1fd074c7c12ba69f` |
 
-- 동결 일시: 
-- 동결 커밋: 
-- 시드: 
-- 교차 확인자: 
+- 동결 일시: 2026-11-14 (초안 — 팀 확인 후 확정)
+- 동결 커밋: d95beb4 (`chore(data): freeze eval/dev/corpus`, 브랜치 YongMin)
+- 시드: 20261113
+- 교차 확인자: (다른 환경에서 `python scripts/freeze_data.py --verify`로 위 해시와 같은지 확인)
+
+해시는 `--force`로 다시 만들어도 같은 값이 나오는 것을 확인했다(UTF-8, LF, 고정 키 순서).
+원본 데이터셋 리비전과 샘플링 규칙은 `frozen/MANIFEST.json`에 있다.
+
+### 재현·검증 방법
+
+```bash
+python scripts/freeze_data.py --verify   # 파일 해시 = MANIFEST, 구성·겹침·참조 검증
+```
+
+다른 환경에서 처음부터 다시 만들어 비교하려면 `data/frozen/`을 건드리지 말고 별도 클론에서
+`python scripts/freeze_data.py --force`를 실행해 해시를 비교한다.
 
 > 이 표가 채워진 뒤로 `frozen/`의 변경은 "평가 세트 사후 변경" 감점 사유입니다. 오류를 발견하면 고치지 말고 팀에 알린 뒤 ADR로 처리 방침을 기록합니다.

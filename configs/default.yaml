@@ -31,4 +31,4 @@ run:
   timeout_s: 120                    # Per-question timeout in seconds
 
 data:
-  seed: 42                          # Random seed for sampling and reproducibility
+  seed: 20261113                    # Must equal data/frozen/MANIFEST.json "seed" (INTERFACES §2)

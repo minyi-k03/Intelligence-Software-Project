@@ -46,7 +46,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.compress.window, 1)
         self.assertEqual(settings.p1.max_steps, 7)
         self.assertEqual(settings.run.timeout_s, 120)
-        self.assertEqual(settings.data.seed, 42)
+        self.assertEqual(settings.data.seed, 20261113)
 
     def test_no_hardcoded_dataclass_defaults(self):
         """Config dataclasses must require explicit values (no hardcoded defaults in code)."""
