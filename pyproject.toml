@@ -1,30 +1,6 @@
-[project]
-name = "meba"
-version = "0.1.0"
-description = "M(EBA): 고정 모델 위에서 하네스만 바꾸는 단일 에이전트와 평가 도구"
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "langchain>=1.0",          # create_agent (P1 ReAct)
-    "langchain-ollama>=1.0",   # ChatOllama — 모든 모델 호출은 여기를 거친다
-    "langgraph>=1.0",          # M 그래프
-    "rank-bm25>=0.2.2",        # 공용 코퍼스 BM25 검색·문장 창 압축
-    "pyyaml>=6.0",             # configs/*.yaml
-    "scipy>=1.11",             # McNemar 정확 검정 (scipy.stats.binomtest)
-    "datasets>=3.0",           # 동결 스크립트 전용 (scripts/freeze_data.py)
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.0"]
-
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-include = ["src*"]
-namespaces = true
+# 의존성은 requirements.txt 한 곳에서만 관리한다. 이 파일은 도구 설정(pytest)만 담는다.
+# Python 3.10+ 필요 (AGENTS.md).
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]   # `from src.eval.scorer import ...` 형태로 import
+pythonpath = ["."]   # `from src.eval.scorer import ...` 형태로 import (루트 conftest.py와 함께)
