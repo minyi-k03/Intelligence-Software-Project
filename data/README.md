@@ -1,4 +1,4 @@
-# data/
+﻿# data/
 
 | 폴더 | 내용 | git |
 |---|---|---|
@@ -35,7 +35,7 @@
 | `frozen/corpus.jsonl` | 653 (HotpotQA 593 + SQuAD 2.0 60) | `d562adc177418aa20b9d6abc2c47273901eeab875b62245d1fd074c7c12ba69f` |
 
 - 동결 일시: 2026-11-14 (초안 — 팀 확인 후 확정)
-- 동결 커밋: (커밋 후 기록)
+- 동결 커밋: d95beb4 (`chore(data): freeze eval/dev/corpus`, 브랜치 YongMin)
 - 시드: 20261113
 - 교차 확인자: (다른 환경에서 `python scripts/freeze_data.py --verify`로 위 해시와 같은지 확인)
 
