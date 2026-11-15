@@ -290,6 +290,10 @@ def bm25_search(
 def format_search_results(results: list[dict[str, Any]] | str) -> str:
     """Format ``bm25_search`` output into an English observation string for ReAct.
 
+    Exposes only rank index, title, and text to the model (hiding ``doc_id``
+    prefixes such as ``hp::``/``sq::`` and retrieval scores to avoid leaking
+    dataset origin or non-content metadata).
+
     Args:
         results: Return value from ``bm25_search``.
 
@@ -303,10 +307,7 @@ def format_search_results(results: list[dict[str, Any]] | str) -> str:
 
     formatted: list[str] = []
     for idx, doc in enumerate(results, start=1):
-        formatted.append(
-            f"[{idx}] {doc['title']} (doc_id: {doc['doc_id']}, score: {doc['score']:.4f})\n"
-            f"{doc['text']}"
-        )
+        formatted.append(f"[{idx}] {doc['title']}\n{doc['text']}")
     return "\n\n".join(formatted)
 
 
@@ -316,9 +317,12 @@ def get_bm25_search_tool(
 ) -> Any:
     """Build a LangChain ``@tool`` wrapping ``bm25_search`` for ReAct/M pipelines.
 
+    Only ``query`` is exposed in the tool schema so models cannot override the
+    configured ``retrieval.k`` budget.
+
     Args:
         corpus_path: Optional corpus JSONL path bound to the tool instance.
-        default_k: Optional default ``k`` override; falls back to config settings.
+        default_k: Optional fixed ``k`` override; falls back to config settings.
 
     Returns:
         LangChain tool object wrapping ``bm25_search``.
@@ -334,10 +338,9 @@ def get_bm25_search_tool(
         ) from exc
 
     @tool("bm25_search")
-    def bm25_search_tool(query: str, k: int | None = None) -> str:
+    def bm25_search_tool(query: str) -> str:
         """Search the offline Wikipedia paragraph corpus using BM25 keyword retrieval."""
-        effective_k = default_k if k is None else k
-        results = bm25_search(query=query, k=effective_k, corpus_path=corpus_path)
+        results = bm25_search(query=query, k=default_k, corpus_path=corpus_path)
         return format_search_results(results)
 
     return bm25_search_tool
