@@ -336,7 +336,7 @@ class TestBM25Search(unittest.TestCase):
         rendered = format_search_results(
             [
                 {
-                    "doc_id": "d1",
+                    "doc_id": "hp::Sample Title",
                     "title": "Sample Title",
                     "sentences": ["Hello world."],
                     "text": "Hello world.",
@@ -344,8 +344,48 @@ class TestBM25Search(unittest.TestCase):
                 }
             ]
         )
-        self.assertIn("[1] Sample Title (doc_id: d1, score: 1.2500)", rendered)
-        self.assertIn("Hello world.", rendered)
+        self.assertEqual(rendered, "[1] Sample Title\nHello world.")
+        self.assertNotIn("hp::", rendered)
+        self.assertNotIn("doc_id", rendered)
+        self.assertNotIn("score", rendered)
+        self.assertNotIn("1.25", rendered)
+
+    def test_langchain_bm25_tool_exposes_only_query_parameter(self) -> None:
+        import inspect
+        import json
+        import sys
+        import types
+        from unittest import mock
+        from src.tools import get_bm25_search_tool
+
+        lines = [json.dumps(item) for item in self.SAMPLE_PARAGRAPHS]
+        corpus_path, tmp_dir = self._write_temp_corpus(lines)
+        try:
+            fake_lc = types.ModuleType("langchain_core")
+            fake_tools = types.ModuleType("langchain_core.tools")
+
+            def fake_tool(_name: str):
+                def decorator(fn):
+                    return fn
+
+                return decorator
+
+            fake_tools.tool = fake_tool  # type: ignore[attr-defined]
+            fake_lc.tools = fake_tools  # type: ignore[attr-defined]
+            with mock.patch.dict(
+                sys.modules,
+                {"langchain_core": fake_lc, "langchain_core.tools": fake_tools},
+            ):
+                wrapped = get_bm25_search_tool(corpus_path=corpus_path, default_k=1)
+
+            params = list(inspect.signature(wrapped).parameters)
+            self.assertEqual(params, ["query"])
+            out = wrapped(query="Nikola Tesla")
+            self.assertIn("[1] Nikola Tesla", out)
+            self.assertNotIn("squad_1", out)
+            self.assertNotIn("doc_id", out)
+        finally:
+            tmp_dir.cleanup()
 
     def test_langchain_bm25_tool_wrapper_or_clean_missing_dependency(self) -> None:
         import json
@@ -361,6 +401,8 @@ class TestBM25Search(unittest.TestCase):
             else:
                 out = tool.invoke({"query": "Nikola Tesla"})
                 self.assertIn("Nikola Tesla", out)
+                self.assertNotIn("doc_id", out)
+                self.assertNotIn("squad_1", out)
         finally:
             tmp_dir.cleanup()
 
