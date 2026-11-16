@@ -78,7 +78,7 @@
 | 작업 | 기한 | 상태 | 근거 · 비고 |
 |---|---|---|---|
 | PR C-1 문장 창 압축 | 11/17 | ✅ | `src/meba/compress.py`, `tests/test_compress.py` (PR #4) |
-| 실험 C-2 `k`×`m` 측정 | 11/19 | ⬜ | 선행 B-2b |
+| 실험 C-2 `k`×`m` 측정 | 11/19 | ✅ | [기록](experiments/2026-11-15-c-compress-m.md), `scripts/measure_compress_m.py`. 권장 m: k=3 → 6, k=5 → 7, k=8 → 10 |
 | PR C-3 근거 판정·재검색 | 11/23 | ⬜ | 선행 D-1 (없으면 mock 상한 래퍼) |
 | 실험 C-4 JSON vs 태그 | 11/25 | ⬜ | |
 | PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | |
@@ -110,7 +110,7 @@
 | 항목 | 현재 값 | 확정 예정 |
 |---|---|---|
 | `retrieval.k` | 3 (`configs/default.yaml`의 임시값) | 실험 B-4 (11/20) |
-| `compress.m` | 3 (임시값) | 실험 C-2 (11/19) → B-4와 함께 반영 |
+| `compress.m` | 3 (임시값, 보존율 70~77%로 기준 미달) | 실험 C-2 완료. B-4에서 k가 정해지면 k=3 → 6, k=5 → 7, k=8 → 10으로 반영 |
 | 의존성 `langchain>=0.2.0` | P1의 `create_agent`는 langchain 1.0 이상에서 제공 | B가 B-3 착수 전에 확인 |
 
 ## 기타
