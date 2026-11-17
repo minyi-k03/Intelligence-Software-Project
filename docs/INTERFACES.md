@@ -100,8 +100,8 @@ BM25 공용 토크나이저(`src/tools/tokenizer.py`): `tokenize(text: str, *, r
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `answer` | str | 최종 답 문자열 (기권이면 `"UNANSWERABLE"`) |
-| `abstained` | bool | 판정 ABSTAIN으로 기권했는가 |
+| `answer` | str | 최종 답 문자열. **접두어 없이 답만** 넣는다(`extract_final_answer` 결과, §6). 기권이면 `"UNANSWERABLE"` |
+| `abstained` | bool | `answer`가 정규화 후 `UNANSWERABLE`과 정확히 같은가. P0·P1·M 모두 `src.eval.scorer.is_abstained`로 정한다. 판정 ABSTAIN뿐 아니라 `decision=ANSWER`인데 답이 `UNANSWERABLE`인 경우도 True이며, 이때 `answer`는 `"UNANSWERABLE"`로 기록한다. `decisions`에는 모델이 낸 값을 그대로 남긴다. **빈 답은 기권으로 바꾸지 않고 오답으로 둔다** |
 | `budget_exhausted` | bool | 호출 예산을 다 써서 끝났는가 (기권과 따로) |
 | `route` | str \| null | M: `math` \| `search`, 그 외 null |
 | `decisions` | list[str] | 근거 판정 결과 순서. 예: `["RETRIEVE", "ANSWER"]` |
@@ -149,16 +149,37 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 
 ## 6. 공통 답 형식 지시문 — 담당 B · C 합의
 
-모든 파이프라인이 같은 지시문을 씁니다(P0는 최소화, P0-raw는 없음). 아래는 출발점 초안입니다.
+> 결정(TBD #4·#5, 팀 3인 동의): P0에도 기권 문구를 넣고, 최종 답은 `Final answer:` 한 줄로 끝낸다. 모든 문구는 영어이며 **문항 유형을 알려 주지 않는 일반 표현**만 쓴다.
+
+지시문은 두 부분이고, 상수는 `src/baselines/prompts.py`에 하나씩 둡니다(B). 아래 문구는 출발점이며, 문구를 다듬을 때도 **의미 조건**(번호 목록)은 유지합니다.
+
+**① 내용 문장** — P0 · P1 · M 근거 판정이 같은 상수를 그대로 씁니다.
 
 ```text
 Answer with a short answer only: a few words, a name, a date, or a number.
-Do not explain. If the question cannot be answered from the available information,
+Do not explain. If the answer is a number, write only the number.
+If the question cannot be answered from the available information,
 reply exactly: UNANSWERABLE
 ```
 
-- TBD: P0에 기권 문구를 넣을지 (넣으면 P0도 답할 수 없음 문항을 맞힐 수 있다 — 결정 후 ADR 또는 EVALUATION에 기록)
-- TBD: 최종 답 추출 방식 (예: `Final answer:` 접두어). 채점기(A)가 같은 추출 함수를 모든 파이프라인에 적용합니다.
+**② 형식 줄** — 자유 서술로 답하는 호출(P0 · P1 · M 수학 경로)에만 붙입니다.
+
+```text
+End your reply with a last line of the form:
+Final answer: <short answer or UNANSWERABLE>
+```
+
+| 파이프라인 | 지시문 |
+|---|---|
+| P0-raw | 없음 (질문만). 기권 불가, 참고용이라 결과표에 그대로 표시 |
+| P0 | ① + ② (최소 지시문이지만 기권 문구와 형식 줄은 포함) |
+| P1 | ① + ② (최종 답 단계) |
+| M 수학 경로 | ① + ② |
+| M 근거 판정 | ①만. 답은 §5 JSON의 `answer` 필드로 받으므로 `Final answer:` 줄을 쓰지 않는다 |
+
+의미 조건: (1) 짧은 답만, 설명 금지 (2) 숫자 답이면 숫자만 (3) 답할 수 없으면 정확히 `UNANSWERABLE` (4) 자유 서술 호출은 마지막 줄을 `Final answer: …`로 끝냄.
+
+**최종 답 추출**: 모든 파이프라인은 같은 함수 `src.eval.scorer.extract_final_answer`를 씁니다. 규칙은 [EVALUATION §3.1](EVALUATION.md)입니다. 파이프라인은 이 함수의 결과(접두어 없는 답)를 `PipelineResult.answer`에 넣습니다. 채점기도 같은 함수를 다시 적용하며, 이미 추출된 답에 다시 적용해도 값이 바뀌지 않습니다.
 
 ---
 
@@ -178,12 +199,12 @@ results/runs/<bundle>/<round>/RUN_META.json
 
 | 추가 필드 | 설명 |
 |---|---|
-| `qid`, `type`, `subtype` | 채점·집계용 (로그에는 유형을 남긴다) |
+| `qid`, `type`, `subtype`, `answer_kind` | 채점·집계용 (로그에는 유형을 남긴다). 집계에서 "텍스트 F1"처럼 문항 종류를 가를 때는 `answer_kind`로 거른다 |
 | `pipeline`, `bundle`, `round`, `order_idx` | 라운드 안 실행 순서 |
 | `gold` | 정답 후보 |
-| `em`, `f1` | 텍스트 문항 (수치 문항은 null) |
-| `numeric_correct` | 수치 문항 (텍스트 문항은 null) |
-| `correct` | 주 지표 기준 정답 여부 (EM 또는 수치 비교) |
+| `em`, `f1` | 텍스트 문항(`answer_kind=text`)은 SQuAD 정규화 EM·F1. **답할 수 없음 문항(`unanswerable`)은 EM과 F1이 같은 값**(기권하면 1.0, 아니면 0.0, SQuAD v2 방식). 수치 문항은 null |
+| `numeric_correct` | 수치 문항 (그 밖의 문항은 null) |
+| `correct` | 주 지표 기준 정답 여부 (텍스트는 EM, 답할 수 없음은 기권 여부, 수치는 수치 비교) |
 | `timeout` | 120초 초과 여부 (초과 시 `correct=false`) |
 | `latency_s` | 문항 입력 ~ 최종 답 |
 | `max_input_tokens` | 이 문항에서 호출별 입력 토큰의 최대값 |
