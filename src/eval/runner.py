@@ -35,7 +35,8 @@ Pipeline = Callable[[str, str], PipelineResult]
 # 호출마다 출력 상한(`cap`)이 있어 보통 이 안에 끝난다. 설계 수치가 아니라 러너 내부 안전 장치다.
 DEFAULT_DRAIN_S = 60.0
 
-_ROUND_RE = re.compile(r"r(\d+)")
+# `r1`, `r2`, ... (`r0`·`r01`은 거부: `r01`은 `r1`과 다른 폴더를 만든다)
+_ROUND_RE = re.compile(r"r([1-9]\d*)")
 
 
 class _Cancelled(BaseException):
@@ -60,10 +61,12 @@ def round_order(pipelines: list[str], round_name: str) -> list[str]:
         이 라운드의 실행 순서 (새 리스트).
 
     Raises:
-        ValueError: 라운드 이름이 `r<번호>` 형식이 아니거나 번호가 0일 때.
+        ValueError: 파이프라인이 없거나, 라운드 이름이 `r<1 이상의 번호>` 형식이 아닐 때.
     """
+    if not pipelines:
+        raise ValueError("돌릴 파이프라인이 하나도 없다")
     match = _ROUND_RE.fullmatch(round_name)
-    if not match or int(match.group(1)) < 1:
+    if not match:
         raise ValueError(f"라운드 이름은 r1, r2, r3 형식이어야 한다: {round_name!r}")
     shift = (int(match.group(1)) - 1) % len(pipelines)
     return pipelines[shift:] + pipelines[:shift]
@@ -111,11 +114,19 @@ def _evidence_kept(item: dict[str, Any], result: PipelineResult, window: int) ->
 
 
 def _cancel(thread: threading.Thread) -> None:
-    """스레드에 `_Cancelled`를 던진다 (파이썬 코드를 실행하는 시점에 발동하는 최선의 시도)."""
-    if thread.ident is not None:
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(
-            ctypes.c_ulong(thread.ident), ctypes.py_object(_Cancelled)
-        )
+    """스레드에 `_Cancelled`를 던진다 (파이썬 코드를 실행하는 시점에 발동하는 최선의 시도).
+
+    Args:
+        thread: 시간 초과한 작업 스레드. 이미 끝났으면 아무 일도 하지 않는다.
+    """
+    if thread.ident is None:
+        return
+    ident = ctypes.c_ulong(thread.ident)
+    affected = ctypes.pythonapi.PyThreadState_SetAsyncExc(ident, ctypes.py_object(_Cancelled))
+    if affected > 1:
+        # 둘 이상의 스레드에 걸렸다면 CPython 문서 권고대로 즉시 되돌린다 (일어나면 안 되는 경우).
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ident, None)
+        raise RuntimeError(f"취소 신호가 스레드 {affected}개에 걸려 되돌렸다: {thread.name}")
 
 
 def _empty_result(error: str) -> PipelineResult:
@@ -197,6 +208,7 @@ def run_item(
     timeout_s: float,
     window: int,
     is_warmup: bool,
+    session_idx: int = 0,
     drain_s: float = DEFAULT_DRAIN_S,
 ) -> dict[str, Any]:
     """문항 하나를 파이프라인으로 돌리고 로그 한 줄을 만든다 (INTERFACES §7.2).
@@ -214,6 +226,7 @@ def run_item(
         timeout_s: 문항당 제한 시간(`run.timeout_s`).
         window: 압축에 쓴 `compress.window` (`evidence_kept` 계산용).
         is_warmup: 워밍업 문항인가.
+        session_idx: 이 문항을 돈 세션의 번호 (`RUN_META.json`의 `sessions` 인덱스, 0부터).
         drain_s: 시간 초과 뒤 작업이 멈추기를 기다리는 최대 시간(초).
 
     Returns:
@@ -241,6 +254,7 @@ def run_item(
         "max_input_tokens": max((c.input_tokens for c in result.calls), default=0),
         "evidence_kept": _evidence_kept(item, result, window),
         "is_warmup": is_warmup,
+        "session_idx": session_idx,
     }
 
 
@@ -348,6 +362,7 @@ def run_round(
         order=order,
         environment=environment if environment is not None else collect_environment(),
     )
+    session_idx = len(meta.data["sessions"]) - 1
 
     vram: dict[str, Optional[int]] = {}
     try:
@@ -370,6 +385,7 @@ def run_round(
                         timeout_s=settings.run.timeout_s,
                         window=settings.compress.window,
                         is_warmup=order_idx == 0,
+                        session_idx=session_idx,
                         drain_s=drain_s,
                     )
                     log.append(row)

@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from src.eval import vram
 from src.eval.logger import (
     FrozenDataError,
     RunLog,
@@ -22,7 +26,40 @@ from src.eval.logger import (
     collect_environment,
     verify_frozen_hashes,
 )
-from src.eval.vram import VramSampler
+from src.eval.vram import VramSampler, query_gpu_memory_mib
+
+
+# --- query_gpu_memory_mib --------------------------------------------------
+
+
+def _fake_nvidia_smi(monkeypatch: pytest.MonkeyPatch, stdout: str | None) -> None:
+    """`nvidia-smi` 출력을 정해 둔다. stdout이 None이면 명령이 없는 환경이다."""
+
+    def fake_run(cmd, **kwargs):
+        if stdout is None:
+            raise FileNotFoundError(cmd[0])
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(vram.subprocess, "run", fake_run)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [
+        ("5120\n", 5120),
+        ("5120\n7300\n\n", 7300),  # GPU 두 장이면 큰 값, 빈 줄은 무시
+        ("", None),  # 출력 없음
+        ("[N/A]\n", None),  # 값을 못 읽음
+        (None, None),  # nvidia-smi 없음
+    ],
+    ids=["one-gpu", "two-gpus", "empty", "not-available", "missing"],
+)
+def test_query_gpu_memory_reads_nvidia_smi_output(
+    monkeypatch: pytest.MonkeyPatch, stdout: str | None, expected: int | None
+) -> None:
+    """nvidia-smi `memory.used`(MiB) 출력을 숫자로 읽고, 못 읽으면 None이다."""
+    _fake_nvidia_smi(monkeypatch, stdout)
+    assert query_gpu_memory_mib() == expected
 
 
 # --- VramSampler ----------------------------------------------------------
@@ -214,6 +251,33 @@ def test_runlog_drops_half_written_last_line_on_resume(tmp_path: Path) -> None:
     assert [r["qid"] for r in _lines(path)] == ["q1", "q2", "q3"]
 
 
+def test_runlog_empty_file_starts_from_scratch(tmp_path: Path) -> None:
+    """빈 파일(만들기만 하고 끊김)은 기록이 없는 것으로 본다."""
+    path = tmp_path / "m.jsonl"
+    path.write_bytes(b"")
+    log = RunLog(path)
+    assert log.done_qids == set()
+    log.append({"qid": "q1"})
+    assert [r["qid"] for r in _lines(path)] == ["q1"]
+
+
+def test_runlog_drops_file_holding_only_a_half_written_line(tmp_path: Path) -> None:
+    """첫 줄을 쓰다 끊겨 개행이 하나도 없으면 그 조각을 지우고 처음부터 쓴다."""
+    path = tmp_path / "m.jsonl"
+    path.write_bytes('{"qid": "q1", "answer": "한'.encode("utf-8")[:-1])  # 한글 바이트 중간에서 끊김
+    log = RunLog(path)
+    assert log.done_qids == set()
+    log.append({"qid": "q1"})
+    assert path.read_bytes() == b'{"qid": "q1"}\n'
+
+
+def test_runlog_accepts_crlf_lines_written_elsewhere(tmp_path: Path) -> None:
+    """다른 도구가 CRLF로 저장한 로그도 이어 돌 수 있다."""
+    path = tmp_path / "m.jsonl"
+    path.write_bytes(b'{"qid": "q1"}\r\n{"qid": "q2"}\r\n')
+    assert RunLog(path).done_qids == {"q1", "q2"}
+
+
 def test_runlog_refuses_corrupt_line_in_the_middle(tmp_path: Path) -> None:
     """마지막이 아닌 줄이 깨져 있으면 이어 쓰지 않고 멈춘다 (로그가 손상된 것)."""
     path = tmp_path / "m.jsonl"
@@ -342,8 +406,9 @@ def test_runmeta_resume_after_crash_keeps_unfinished_session(tmp_path: Path) -> 
         {"order": ["p1", "m", "p0", "p0_raw"]},
         {"round_name": "r2"},
         {"item_set": "dev"},
+        {"bundle": "ablation"},
     ],
-    ids=["settings", "data-hash", "order", "round", "item-set"],
+    ids=["settings", "data-hash", "order", "round", "item-set", "bundle"],
 )
 def test_runmeta_resume_refuses_when_conditions_changed(tmp_path: Path, override: dict) -> None:
     """설정·데이터·실행 순서가 달라진 채로 이어 돌면 한 라운드에 조건이 섞이므로 거부한다."""
@@ -370,6 +435,16 @@ def test_collect_environment_parses_tool_output() -> None:
     assert env["git_dirty"] is True
     assert env["gpu"] == {"name": "Tesla T4", "driver": "550.54.15"}
     assert env["ollama_version"] == "0.5.1"
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git이 없는 환경")
+def test_collect_environment_reads_repo_commit_from_any_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """레포 밖(예: Colab의 /content)에서 실행해도 이 레포의 커밋을 기록한다."""
+    monkeypatch.chdir(tmp_path)
+    env = collect_environment()
+    assert env["git_commit"] is not None and re.fullmatch(r"[0-9a-f]{40}", env["git_commit"])
 
 
 def test_collect_environment_missing_tools_give_none() -> None:

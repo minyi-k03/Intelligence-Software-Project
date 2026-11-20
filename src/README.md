@@ -26,6 +26,10 @@
 
 절제 변형은 별도 코드 복사본을 만들지 않고, `graph.py`에서 부품별 켜기/끄기 설정으로 만듭니다.
 
+## 역할 사이 의존
+
+- `eval/runner.py`(A)는 로그의 `evidence_kept`를 계산할 때 `meba/compress.py`(C)의 `covered_sentences`를 씁니다. 실험 C-2의 근거 문장 보존율과 같은 기준을 유지하려는 것이므로, 이 함수의 입출력을 바꾸면 `tests/test_runner.py`도 함께 확인합니다.
+
 ## 공통 규칙
 
 - 모델 태그·temperature·상한 값은 `config/`를 통해서만 읽습니다.

@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from src.config.settings import REPO_ROOT
+
 # 측정 시작 전에 해시를 확인하는 동결 파일 (INTERFACES §1.3).
 FROZEN_FILES = ("eval.jsonl", "dev.jsonl", "corpus.jsonl")
 
@@ -131,7 +133,9 @@ CommandRunner = Callable[[tuple[str, ...]], Optional[str]]
 
 
 def _run_cmd(cmd: tuple[str, ...]) -> Optional[str]:
-    """명령을 실행해 표준 출력(양끝 공백 제거)을 돌려준다. 실패하면 None.
+    """레포 루트에서 명령을 실행해 표준 출력(양끝 공백 제거)을 돌려준다. 실패하면 None.
+
+    실행 위치와 상관없이(예: Colab의 `/content`) `git`이 이 레포를 보게 레포 루트에서 실행한다.
 
     Args:
         cmd: 실행할 명령과 인자.
@@ -140,7 +144,7 @@ def _run_cmd(cmd: tuple[str, ...]) -> Optional[str]:
         표준 출력 문자열. 명령이 없거나 0이 아닌 코드로 끝나면 None.
     """
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True, cwd=REPO_ROOT)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.strip()
@@ -300,8 +304,12 @@ class RunMeta:
         self._write()
 
     def _write(self) -> None:
-        """임시 파일에 쓴 뒤 바꿔치기해서, 쓰는 도중 끊겨도 파일이 깨지지 않게 한다."""
+        """임시 파일에 쓰고 디스크까지 내린 뒤 바꿔치기해서, 쓰는 도중 끊겨도 파일이 깨지지 않게 한다."""
         tmp = self.path.with_name(self.path.name + ".tmp")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        payload = (json.dumps(self.data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        with tmp.open("wb") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, self.path)

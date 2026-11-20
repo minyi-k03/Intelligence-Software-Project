@@ -136,6 +136,19 @@ def test_round_order_rejects_unknown_round() -> None:
         round_order(_PIPELINES, "round1")
 
 
+@pytest.mark.parametrize("round_name", ["r0", "r01"])
+def test_round_order_rejects_zero_and_zero_padded_rounds(round_name: str) -> None:
+    """`r0`은 없는 라운드이고, `r01`은 `r1`과 다른 폴더를 만들므로 거부한다."""
+    with pytest.raises(ValueError):
+        round_order(_PIPELINES, round_name)
+
+
+def test_round_order_rejects_empty_pipeline_list() -> None:
+    """돌릴 파이프라인이 없으면 0으로 나누기 대신 이유를 알려 주고 멈춘다."""
+    with pytest.raises(ValueError, match="파이프라인"):
+        round_order([], "r1")
+
+
 # --- run_item: 로그 한 줄 -----------------------------------------------------
 
 
@@ -324,6 +337,22 @@ def test_evidence_kept_ignores_gold_paragraph_that_was_never_retrieved() -> None
 def test_evidence_kept_is_none_without_compression() -> None:
     """압축을 쓰지 않았으면(kept_windows 비어 있음) null이다."""
     assert _run(HOTPOT, _fixed(_result("x", retrieved_doc_ids=[["hp::Alpha"]])))["evidence_kept"] is None
+
+
+def test_evidence_kept_is_true_for_full_paragraph_variant() -> None:
+    """`m_minus_compress`(문단 통째로)는 검색된 근거 문장을 모두 남기므로 true다 (INTERFACES §7.2)."""
+    from src.meba.compress import full_paragraphs
+
+    paragraphs = [
+        {"doc_id": "hp::Alpha", "title": "Alpha", "sentences": ["a0", "a1"]},
+        {"doc_id": "hp::Beta", "title": "Beta", "sentences": ["b0", "b1", "b2", "b3", "b4", "b5"]},
+    ]
+    result = _result(
+        "x",
+        retrieved_doc_ids=[["hp::Alpha", "hp::Beta"]],
+        kept_windows=[full_paragraphs(paragraphs).kept_windows],
+    )
+    assert _run(HOTPOT, _fixed(result), window=1)["evidence_kept"] is True
 
 
 def test_evidence_kept_is_none_for_non_hotpot_items() -> None:
@@ -527,6 +556,8 @@ def test_run_round_resumes_after_partial_log(env: _Env, settings: Settings) -> N
     assert [r["qid"] for r in rows] == [i["qid"] for i in _EVAL_ITEMS]
     assert [r["is_warmup"] for r in rows] == [True, False, False]
     assert len(env.meta()["sessions"]) == 2
+    # 이어 돈 세션의 첫 문항(모델 재로딩으로 시간이 튈 수 있음)을 로그만으로 가려낼 수 있다.
+    assert [r["session_idx"] for r in rows] == [0, 1, 1]
 
 
 def test_run_round_skips_pipeline_that_is_already_complete(env: _Env, settings: Settings) -> None:

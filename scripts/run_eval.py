@@ -19,10 +19,11 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
+from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from src.config.settings import REPO_ROOT, Settings, get_settings
-from src.eval.logger import RunMetaMismatch
+from src.eval.logger import FrozenDataError, RunMetaMismatch, verify_frozen_hashes
 from src.eval.runner import DEFAULT_ITEM_SET, SCRATCH_BUNDLE, Pipeline, run_round
 
 PipelineFactory = Callable[[Settings], Pipeline]
@@ -66,13 +67,22 @@ def load_factory(name: str, registry: dict[str, str | PipelineFactory]) -> Pipel
 def main(
     argv: Optional[Sequence[str]] = None,
     registry: Optional[dict[str, str | PipelineFactory]] = None,
+    frozen_dir: Optional[Path] = None,
+    readme_path: Optional[Path] = None,
 ) -> None:
     """CLI 진입점.
 
     Args:
         argv: 인자 목록. 없으면 `sys.argv`.
         registry: 파이프라인 등록부. 없으면 `PIPELINE_FACTORIES` (테스트·수동 확인용으로 바꿀 수 있다).
+        frozen_dir: 동결 폴더. 없으면 `data/frozen/` (테스트용).
+        readme_path: 해시 표가 있는 README. 없으면 `data/README.md` (테스트용).
+
+    Raises:
+        SystemExit: 인자가 잘못됐거나, 동결 해시가 다르거나, 파이프라인을 못 불러오거나, 이어 돌기 조건이 다를 때.
     """
+    frozen_dir = frozen_dir or REPO_ROOT / "data" / "frozen"
+    readme_path = readme_path or REPO_ROOT / "data" / "README.md"
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--bundle", choices=[*DEFAULT_ITEM_SET], help="결과 묶음")
     parser.add_argument("--round", default="r1", dest="round_name", help="라운드 이름 (r1, r2, r3)")
@@ -94,8 +104,17 @@ def main(
         parser.error("ablation 묶음은 --pipelines로 M과 절제 변형 이름을 직접 정해야 한다")
     else:
         names = list(DEFAULT_PIPELINES)
+    if not names:
+        parser.error("--pipelines에 파이프라인 이름이 하나도 없다")
     if len(set(names)) != len(names):
         parser.error("--pipelines에 같은 이름이 두 번 들어 있다")
+
+    # 파이프라인을 만들 때 코퍼스(검색 인덱스)를 읽으므로, 그 전에 동결 데이터를 확인한다.
+    # run_round도 기록 직전에 한 번 더 확인한다.
+    try:
+        verify_frozen_hashes(frozen_dir, readme_path)
+    except FrozenDataError as exc:
+        raise SystemExit(f"동결 데이터 해시 확인 실패: {exc}") from exc
 
     registry = PIPELINE_FACTORIES if registry is None else registry
     settings = get_settings(args.config)
@@ -129,8 +148,8 @@ def main(
             item_set=args.item_set or DEFAULT_ITEM_SET[bundle],
             settings=settings,
             pipelines=pipelines,
-            frozen_dir=REPO_ROOT / "data" / "frozen",
-            readme_path=REPO_ROOT / "data" / "README.md",
+            frozen_dir=frozen_dir,
+            readme_path=readme_path,
             runs_dir=runs_dir,
             limit=args.verify,
             on_row=progress,

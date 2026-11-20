@@ -205,7 +205,9 @@ results/runs/<bundle>/<round>/RUN_META.json
 | 추가 필드 | 설명 |
 |---|---|
 | `qid`, `type`, `subtype`, `answer_kind` | 채점·집계용 (로그에는 유형을 남긴다). 집계에서 "텍스트 F1"처럼 문항 종류를 가를 때는 `answer_kind`로 거른다 |
-| `pipeline`, `bundle`, `round`, `order_idx` | 라운드 안 실행 순서 |
+| `pipeline`, `bundle`, `round` | 파이프라인 이름, 묶음, 라운드 |
+| `order_idx` | 이 파이프라인 안에서 문항 순번(0부터, 문항 세트 파일 순서). 파이프라인 사이의 실행 순서는 `RUN_META.json`의 `pipeline_order` |
+| `session_idx` | 이 문항을 돈 세션 번호(0부터) = `RUN_META.json`의 `sessions` 인덱스. 이어 돌기로 생긴 세션은 1 이상 |
 | `gold` | 정답 후보 |
 | `em`, `f1` | 텍스트 문항(`answer_kind=text`)은 SQuAD 정규화 EM·F1. **답할 수 없음 문항(`unanswerable`)은 EM과 F1이 같은 값**(기권하면 1.0, 아니면 0.0, SQuAD v2 방식). 수치 문항은 null |
 | `numeric_correct` | 수치 문항 (그 밖의 문항은 null) |
@@ -213,7 +215,7 @@ results/runs/<bundle>/<round>/RUN_META.json
 | `timeout` | 120초 초과 여부 (초과 시 `correct=false`). 시간 초과 문항은 `answer=""`, `error="timeout"`이고, 작업을 중단하므로 `calls`는 비어 있다. `latency_s`는 제한 시간(120) 이상의 값이다 |
 | `latency_s` | 문항 입력 ~ 최종 답. 러너가 직접 잰다 |
 | `max_input_tokens` | 이 문항에서 호출별 입력 토큰의 최대값 (호출 기록이 없으면 0) |
-| `evidence_kept` | 근거 문장 보존 여부. 검색된 문단 안의 근거 문장(`supporting_facts`)이 모두 남긴 문장 창(`compress.window` 반경)에 덮이면 true (실험 C-2의 보존율과 같은 기준: 검색이 못 찾은 문단의 근거 문장은 세지 않는다). HotpotQA가 아니거나, 압축을 안 썼거나(`kept_windows`가 비어 있음), 검색된 근거 문장이 없으면 null |
+| `evidence_kept` | 근거 문장 보존 여부. 검색된 문단 안의 근거 문장(`supporting_facts`)이 모두 남긴 문장 창(`compress.window` 반경)에 덮이면 true (실험 C-2의 보존율과 같은 기준: 검색이 못 찾은 문단의 근거 문장은 세지 않는다). HotpotQA가 아니거나, 압축 단계가 없거나(`kept_windows`가 비어 있음: P0·P1 등), 검색된 근거 문장이 없으면 null. `m_minus_compress`는 문단 전체를 창으로 남기므로(`full_paragraphs`) 검색된 근거 문장이 있으면 늘 true다 |
 | `is_warmup` | 파이프라인마다 첫 1문항(`order_idx=0`)이 워밍업이다. **시간·비용 집계에서만 제외**하고, 정확도·McNemar는 워밍업 문항을 포함한 전체 문항으로 낸다 (A 제안, D 확인 필요) |
 
 로그 한 줄에는 `PipelineResult`의 모든 필드(`answer`, `abstained`, `calls` 등)가 최상위에 그대로 펼쳐져 있고, `calls`의 각 원소는 `CallRecord` 필드를 가진 객체다. 파이프라인이 예외를 던지면 러너는 멈추지 않고 `answer=""`, `error="<예외 종류>: <메시지>"`인 오답 한 줄을 남긴다.
@@ -236,7 +238,8 @@ git 커밋, 세 데이터 파일 해시, 설정 전체 스냅샷, GPU 이름·�
 - `nvidia-smi`의 `memory.used`는 GPU 전체 사용량(다른 프로세스 포함)이다. GPU가 여러 장이면 가장 큰 값을 쓴다.
 - 이어 돌 때 `settings`·`data_hashes`·`pipeline_order`·`bundle`·`round`·`item_set`이 처음과 다르면 러너가 멈춘다 (한 라운드에 조건이 섞이므로 새 라운드로 돌린다).
 - 시간 초과한 작업은 취소 신호를 받는다. 모델 호출에서 막혀 신호가 닿지 않고 대기 시간(60초)을 넘기면 다음 문항의 측정이 오염되므로 러너가 `StuckWorkerError`로 멈춘다. 그 문항은 기록되지 않아 같은 명령으로 이어 돌면 다시 돈다.
-- 이어 돈 세션의 첫 문항은 워밍업으로 표시하지 않는다(`order_idx=0`만 표시). 세션이 끊긴 뒤 모델이 다시 로딩되면 그 문항의 시간이 튈 수 있으므로, 시간 집계에서는 `sessions`의 시작 시각과 함께 이상치를 확인한다.
+- 이어 돈 세션의 첫 문항은 워밍업으로 표시하지 않는다(`order_idx=0`만 표시). 세션이 끊긴 뒤 모델이 다시 로딩되면 그 문항의 시간이 튈 수 있으므로, 시간 집계에서는 파이프라인마다 `session_idx`가 1 이상인 세션의 첫 문항(가장 작은 `order_idx`)을 이상치 후보로 확인한다.
+- 동결 해시는 CLI가 파이프라인을 만들기 전(코퍼스·검색 인덱스를 읽기 전)에 한 번, `run_round`가 기록을 시작하기 전에 한 번 확인한다.
 
 ---
 
