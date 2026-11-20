@@ -198,7 +198,10 @@ results/runs/<bundle>/<round>/RUN_META.json
 - `main`·`ablation`은 평가 세트(`eval.jsonl`), `dev`는 개발 세트(`dev.jsonl`)만 읽는다. 짝이 맞지 않으면 러너가 멈춘다. `_scratch`는 둘 다 허용한다.
 - 라운드마다 파이프라인 실행 순서를 한 칸씩 돌려 바꾼다 (`r1`은 기본 순서, `r2`는 한 칸, `r3`은 두 칸). 본 비교의 4개 파이프라인에서 M이 3라운드에 서로 다른 순번에 놓인다.
 - 실행: `python -m scripts.run_eval --bundle <묶음> --round <라운드>`. 검증 모드는 `--verify N`(앞 N문항, `_scratch`). 세션이 끊기면 같은 명령을 다시 실행하면 이어 돈다.
-- 러너는 `scripts/run_eval.py`의 `PIPELINE_FACTORIES`에 등록된 `모듈:함수`로 파이프라인을 만든다. 함수는 `Settings`를 받아 `(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다. (제안: B·A가 자기 파이프라인을 등록할 때 확인)
+- 러너는 `scripts/run_eval.py`의 `PIPELINE_FACTORIES`에 등록된 항목으로 파이프라인을 만든다. 등록 형식은 둘이다.
+  - `"모듈:함수"`: 함수가 `Settings`를 받아 `(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다 (그래프를 한 번 만들어 재사용하는 M 등).
+  - `"call:모듈:함수"`: 함수가 `fn(qid, question, *, settings=None) -> PipelineResult` 형태다 (B-3의 `run_p0`·`run_p0_raw`·`run_p1`). 러너가 `settings=`를 미리 묶는다.
+  - (제안: B·A가 자기 파이프라인을 등록할 때 확인)
 
 ### 7.2 문항별 로그 한 줄 = 메타 + `PipelineResult` + 채점
 

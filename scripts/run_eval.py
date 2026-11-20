@@ -11,12 +11,15 @@
 - 정식 묶음(`main`·`ablation`)은 평가 세트, `dev`는 개발 세트를 읽는다.
 
 파이프라인은 `PIPELINE_FACTORIES`에 `이름 -> "모듈:함수"`로 등록한다. 함수는 설정을 받아
-`(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다 (docs/INTERFACES.md §4).
+`(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다. 설정을 키워드(`settings=`)로 받는
+`run_*(qid, question, *, settings=None)` 함수는 `"call:모듈:함수"`로 등록하면 러너가 설정을 묶어 준다
+(docs/INTERFACES.md §7.1).
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import sys
 from pathlib import Path
@@ -28,11 +31,16 @@ from src.eval.runner import DEFAULT_ITEM_SET, SCRATCH_BUNDLE, Pipeline, run_roun
 
 PipelineFactory = Callable[[Settings], Pipeline]
 
-# 이름 -> "모듈:함수". 파이프라인 PR(B-3 기준선, A-5b M, 절제 변형)이 자기 항목을 등록한다.
+# 항목이 이 접두어로 시작하면 "생성 함수"가 아니라 `fn(qid, question, *, settings=...)` 형태의
+# 실행 함수다. 러너가 설정을 미리 묶어 `(qid, question)` 호출 객체로 바꿔 쓴다.
+CALL_PREFIX = "call:"
+
+# 이름 -> "모듈:함수" (생성 함수) 또는 "call:모듈:함수" (실행 함수).
+# 파이프라인 PR(B-3 기준선, A-5b M, 절제 변형)이 자기 항목을 등록한다.
 PIPELINE_FACTORIES: dict[str, str] = {
-    "p0": "src.baselines.p0:build_p0",
-    "p0_raw": "src.baselines.p0:build_p0_raw",
-    "p1": "src.baselines.p1_react:build_p1",
+    "p0": "call:src.baselines.p0:run_p0",
+    "p0_raw": "call:src.baselines.p0:run_p0_raw",
+    "p1": "call:src.baselines.p1_react:run_p1",
     "m": "src.meba.graph:build_m",
 }
 
@@ -44,10 +52,11 @@ def load_factory(name: str, registry: dict[str, str | PipelineFactory]) -> Pipel
 
     Args:
         name: 파이프라인 이름.
-        registry: 이름 -> "모듈:함수" 문자열 또는 생성 함수.
+        registry: 이름 -> "모듈:함수"(생성 함수), "call:모듈:함수"(실행 함수) 문자열 또는 생성 함수.
 
     Returns:
-        설정을 받아 파이프라인을 돌려주는 함수.
+        설정을 받아 `(qid, question)` 호출 객체를 돌려주는 함수. 실행 함수 항목은 설정을
+        `settings=`로 묶는 생성 함수로 감싸 돌려준다.
 
     Raises:
         SystemExit: 등록되지 않았거나 모듈·함수를 찾을 수 없을 때 (아직 구현 전인 파이프라인 포함).
@@ -57,11 +66,15 @@ def load_factory(name: str, registry: dict[str, str | PipelineFactory]) -> Pipel
         raise SystemExit(f"등록되지 않은 파이프라인: {name!r} (등록된 것: {', '.join(registry)})")
     if callable(entry):
         return entry
-    module_name, _, func_name = entry.partition(":")
+    target = entry.removeprefix(CALL_PREFIX)
+    module_name, _, func_name = target.partition(":")
     try:
-        return getattr(importlib.import_module(module_name), func_name)
+        func = getattr(importlib.import_module(module_name), func_name)
     except (ImportError, AttributeError) as exc:
         raise SystemExit(f"파이프라인 {name!r}을 불러올 수 없다 ({entry}): {exc}") from exc
+    if entry.startswith(CALL_PREFIX):
+        return lambda settings: functools.partial(func, settings=settings)
+    return func
 
 
 def main(

@@ -20,7 +20,7 @@
 | 측정 | 11/28 ~ 12/03 | 미착수 |
 | 마무리 | 12/04 | 미착수 |
 
-테스트: 전체 252개 통과 (2026-11-20, `pytest -q`, A-3 브랜치 기준. `main`은 161개)
+테스트: 전체 254개 통과 (2026-11-20, `pytest -q`, A-3 브랜치 기준. `main`은 161개)
 
 ## 지금 막혀 있는 것
 
@@ -55,7 +55,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR A-0 스켈레톤·의존성·규격 합의 | 11/11 | ✅ | PR #1·#2·#6. `main` 보호·팀원 초대는 ❓ |
 | PR A-1 데이터·코퍼스 동결 | 11/13 | ✅ | PR #6, 동결 커밋 `d95beb4`. 교차 확인 완료([data/README.md](../data/README.md)) |
 | PR A-2 채점기 | 11/17 | ✅ | `src/eval/scorer.py`, `tests/test_scorer.py` (PR #12, `24b8e0a`). EM/F1·수치·기권 채점, 공통 답 추출 |
-| PR A-3 로거·VRAM·러너 | 11/19 | 🔄 | `src/eval/{vram,logger,runner}.py`, `scripts/run_eval.py`, `tests/test_eval_io.py`·`tests/test_runner.py`·`tests/test_run_eval.py` (`YongMin` 브랜치, PR 대기). Antigravity 교차 검증(11/20, CPU 전용 환경) 지적 반영 완료. 파이프라인 등록(`PIPELINE_FACTORIES`)은 B-3·A-5b가 채운다. 실제 GPU·Ollama 검증은 B-1 환경에서 `--verify N`으로 수동 확인 필요 |
+| PR A-3 로거·VRAM·러너 | 11/19 | 🔄 | `src/eval/{vram,logger,runner}.py`, `scripts/run_eval.py`, `tests/test_eval_io.py`·`tests/test_runner.py`·`tests/test_run_eval.py` (`YongMin` 브랜치, PR 대기). Antigravity 교차 검증(11/20, CPU 전용 환경) 지적 반영 완료. 파이프라인 등록(`PIPELINE_FACTORIES`)은 `"모듈:함수"`(생성 함수)와 `"call:모듈:함수"`(B-3의 `run_p0(qid, question, *, settings)` 형태) 두 형식을 받는다. M은 A-5b가 채운다. 실제 GPU·Ollama 검증은 B-1 환경에서 `--verify N`으로 수동 확인 필요 |
 | PR A-4 라우터 | 11/20 | ⬜ | 선행 B-2b, D-1 |
 | PR A-5a 그래프 골격 | 11/23 | ⬜ | |
 | PR A-5b M 통합 | 11/25 | ⬜ | |

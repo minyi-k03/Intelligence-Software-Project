@@ -106,6 +106,34 @@ def test_empty_pipeline_list_is_rejected(tmp_path: Path, pipelines: str) -> None
     assert factories.built == []
 
 
+_SEEN_SETTINGS: list[Any] = []
+
+
+def run_fake(qid: str, question: str, *, settings: Settings | None = None) -> PipelineResult:
+    """`call:` 등록용 가짜 실행 함수. 받은 설정을 기록한다."""
+    _SEEN_SETTINGS.append(settings)
+    return _answer(qid, question)
+
+
+def test_call_style_entry_gets_settings_bound(tmp_path: Path) -> None:
+    """`call:모듈:함수` 항목은 `fn(qid, question, *, settings=...)`에 설정을 묶어 (qid, question)으로 돈다."""
+    _SEEN_SETTINGS.clear()
+    main(
+        ["--verify", "2", "--pipelines", "p0", "--runs-dir", str(tmp_path)],
+        registry={"p0": f"call:{__name__}:run_fake"},
+    )
+    rows = _rows(tmp_path / "_scratch" / "r1" / "p0.jsonl")
+    assert len(rows) == 2 and len(_SEEN_SETTINGS) == 2
+    assert all(isinstance(s, Settings) for s in _SEEN_SETTINGS)
+
+
+def test_call_style_entry_with_missing_function_is_rejected(tmp_path: Path) -> None:
+    """`call:` 항목도 함수를 못 찾으면 어떤 항목인지 밝히며 멈춘다."""
+    entry = f"call:{__name__}:nope"
+    with pytest.raises(SystemExit, match="nope"):
+        main(["--verify", "1", "--pipelines", "p0", "--runs-dir", str(tmp_path)], registry={"p0": entry})
+
+
 def test_unknown_pipeline_is_rejected(tmp_path: Path) -> None:
     """등록되지 않은 이름은 등록된 이름 목록과 함께 멈춘다."""
     with pytest.raises(SystemExit, match="p0"):
