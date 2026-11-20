@@ -47,8 +47,8 @@ def _clean(text: str) -> str:
     while text != prev:
         prev = text
         text = text.strip().strip(_EDGE_CHARS).strip()
-        if text.endswith("."):
-            text = text[:-1]
+        # 마침표는 연속해서 한 번에 벗긴다 (한 글자씩 자르면 긴 입력에서 O(N^2)).
+        text = text.rstrip(".")
     return text
 
 

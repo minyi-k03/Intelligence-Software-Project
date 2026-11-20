@@ -20,7 +20,7 @@
 | 측정 | 11/28 ~ 12/03 | 미착수 |
 | 마무리 | 12/04 | 미착수 |
 
-테스트: 전체 146개 통과 (2026-11-20, `pytest -q`)
+테스트: 전체 161개 통과 (2026-11-20, `pytest -q`)
 
 ## 지금 막혀 있는 것
 
@@ -40,7 +40,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | 7 | 의존성 파일·Python 버전 | ✅ | `requirements.txt` 한 곳에서 관리, Python 3.10+, `pyproject.toml`은 pytest 설정만 |
 | 4 | P0 기권 문구 | ✅ | P0에도 기권 문구를 넣는다. INTERFACES §6, EVALUATION §3.3 (`4ede049`) |
 | 5 | 답 추출 접두어·GSM8K 숫자 규칙 | ✅ | `Final answer:` 접두어, 마지막 숫자 규칙. EVALUATION §3.1·§3.2 (`4ede049`) |
-| 6 | 대표값 규칙 | ⬜ | 〃 |
+| 6 | 대표값 규칙 | ⬜ | 위 "막혀 있는 것" 참고 |
 | - | 스켈레톤 커밋 | ✅ | `c9335bb` + `data/frozen/.gitkeep` |
 | - | 브랜치 이름 규칙 | ✅ | 각자 영문 이름 (`YongMin`, `HyunSeong`, `HwanHo`) |
 | - | `main` 보호 설정, 팀원 초대 | ❓ | GitHub 설정이라 저장소로 확인 불가 |
