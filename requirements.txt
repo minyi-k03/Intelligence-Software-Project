@@ -1,5 +1,5 @@
-# Core dependencies
-langchain>=0.2.0
+# Core dependencies (langchain>=1.0.0 required for langchain.agents.create_agent)
+langchain>=1.0.0
 langchain-core>=0.2.0
 langchain-ollama>=0.1.0
 langgraph>=0.2.0

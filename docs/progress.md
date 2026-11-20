@@ -64,10 +64,10 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 
 | 작업 | 기한 | 상태 | 근거 · 비고 |
 |---|---|---|---|
-| PR B-1 설정·ChatOllama·콜백 | 11/13 | ✅ | `configs/default.yaml`, `src/config/{settings,llm,callbacks}.py`, `tests/test_config.py` |
-| PR B-2a 공용 토크나이저 | 11/13 | ✅ | `src/tools/tokenizer.py`, `tests/test_tools.py` (PR #3·#5) |
-| PR B-2b BM25 검색·계산기 | 11/16 | ⬜ | 선행 A-1 ✅로 착수 가능 |
-| PR B-3 P0·P0-raw·P1 | 11/18 | ⬜ | TBD #4 필요 |
+| PR B-1 설정·ChatOllama·콜백 | 11/13 | ✅ | `configs/default.yaml`, `src/config/{settings,llm,callbacks}.py`, `tests/test_config.py` (PR #3) |
+| PR B-2a 공용 토크나이저 | 11/13 | ✅ | `src/tools/tokenizer.py`, `tests/test_tools.py` (PR #5) |
+| PR B-2b BM25 검색·계산기 | 11/16 | ✅ | `src/tools/{bm25_search,calculator,__init__}.py`, `tests/test_tools.py` (PR #9) |
+| PR B-3 P0·P0-raw·P1 | 11/18 | ✅ | `src/baselines/{prompts,p0,p1_react,__init__}.py`, `tests/test_baselines.py` |
 | 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ⬜ | |
 | PR B-5 Colab 노트북 (A에서 이관 제안) | 11/26 | ⬜ | 이관은 팀 확인 필요 |
 
@@ -109,7 +109,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 |---|---|---|
 | `retrieval.k` | 3 (`configs/default.yaml`의 임시값) | 실험 B-4 (11/20) |
 | `compress.m` | 3 (임시값, 보존율 70~77%로 기준 미달) | 실험 C-2 완료. B-4에서 k가 정해지면 k=3 → 6, k=5 → 7, k=8 → 10으로 반영 |
-| 의존성 `langchain>=0.2.0` | P1의 `create_agent`는 langchain 1.0 이상에서 제공 | B가 B-3 착수 전에 확인 |
+| 의존성 `langchain>=1.0.0` | P1 `create_agent` 지원 위해 `requirements.txt` 상향 완료 | PR B-3에서 반영 |
 
 ## 기타
 
