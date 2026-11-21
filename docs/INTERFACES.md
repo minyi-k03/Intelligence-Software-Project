@@ -219,7 +219,7 @@ results/runs/<bundle>/<round>/RUN_META.json
 | `latency_s` | 문항 입력 ~ 최종 답. 러너가 직접 잰다 |
 | `max_input_tokens` | 이 문항에서 호출별 입력 토큰의 최대값 (호출 기록이 없으면 0) |
 | `evidence_kept` | 근거 문장 보존 여부. 검색된 문단 안의 근거 문장(`supporting_facts`)이 모두 남긴 문장 창(`compress.window` 반경)에 덮이면 true (실험 C-2의 보존율과 같은 기준: 검색이 못 찾은 문단의 근거 문장은 세지 않는다). HotpotQA가 아니거나, 압축 단계가 없거나(`kept_windows`가 비어 있음: P0·P1 등), 검색된 근거 문장이 없으면 null. `m_minus_compress`는 문단 전체를 창으로 남기므로(`full_paragraphs`) 검색된 근거 문장이 있으면 늘 true다 |
-| `is_warmup` | 파이프라인마다 첫 1문항(`order_idx=0`)이 워밍업이다. **시간·비용 집계에서만 제외**하고, 정확도·McNemar는 워밍업 문항을 포함한 전체 문항으로 낸다 (A 제안, D 확인 필요) |
+| `is_warmup` | 파이프라인마다 첫 1문항(`order_idx=0`)이 워밍업이다. **시간·비용 집계에서만 제외**하고, 정확도·McNemar는 워밍업 문항을 포함한 전체 문항으로 낸다 |
 
 로그 한 줄에는 `PipelineResult`의 모든 필드(`answer`, `abstained`, `calls` 등)가 최상위에 그대로 펼쳐져 있고, `calls`의 각 원소는 `CallRecord` 필드를 가진 객체다. 파이프라인이 예외를 던지면 러너는 멈추지 않고 `answer=""`, `error="<예외 종류>: <메시지>"`인 오답 한 줄을 남긴다.
 
@@ -248,9 +248,9 @@ git 커밋, 세 데이터 파일 해시, 설정 전체 스냅샷, GPU 이름·�
 
 ### 7.4 결과표 대표값 (TBD #6)
 
-- 본 비교 정확도와 M 대 P1 McNemar 검정은 문항별 3라운드 `correct` 다수결을 사용한다. F1과 비용은 워밍업을 제외한 문항 실행 전체에서 계산한다. 절제 지표는 같은 묶음의 1라운드 값이다.
+- 본 비교 정확도와 M 대 P1 McNemar 검정은 문항별 3라운드 `correct` 다수결을 사용한다. 정확도·F1·McNemar·부작용 지표는 워밍업 문항도 포함한다. 문항별 시간·호출 수·토큰 지표(최대 입력 토큰 포함)는 워밍업을 제외한다. 절제 지표는 같은 묶음의 1라운드 값이다.
 - 정식 집계는 각 로그의 문항 ID와 유형이 동결 평가 세트와 일치해야 한다. 검증 모드에서는 모든 로그가 같은 평가 세트 부분집합을 사용한다.
-- `RUN_META.json`의 선택 필드 `max_vram_mb`는 라운드 전체의 최대 VRAM(MiB)이다. 파이프라인별 값은 선택 매핑 `max_vram_mb_by_pipeline`에 기록한다. 결과표에는 해당 묶음의 모든 라운드에서 기록된 경우에만 최대치를 표시한다.
+- VRAM은 §7.3의 `RUN_META.json`에서 읽는다. 결과표의 `max_vram_mib`는 `max_vram_mib_by_pipeline`의 해당 파이프라인 값, `bundle_max_vram_mib`는 라운드 전체의 `max_vram_mib`를 사용한다. 각각 모든 대상 라운드에 측정값이 있을 때만 그 최댓값(MiB)을 표시한다.
 - `evidence_kept`는 해당 문항의 근거 보존 여부를 나타내는 불리언이다. 적용되지 않거나 측정하지 않았으면 null 또는 필드를 생략한다.
 
 ---

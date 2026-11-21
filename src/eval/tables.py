@@ -40,11 +40,9 @@ def read_jsonl(path: Path) -> Iterator[Row]:
 
 
 def _load_run(path: Path, questions: Run) -> Run:
-    """Index non-warmup rows and verify question identity and run metadata."""
+    """Index all scored rows and verify question identity and run metadata."""
     run = {}
     for row in read_jsonl(path):
-        if row["is_warmup"]:
-            continue
         qid = row["qid"]
         if qid in run:
             raise ValueError(f"{path}: duplicate question {qid}")
@@ -70,9 +68,9 @@ def _mean(values: Iterable[float]) -> float | None:
     return mean(observed) if observed else None
 
 
-def _ratio(value: float, baseline: float) -> float | None:
+def _ratio(value: float | None, baseline: float | None) -> float | None:
     """Compute the ratio when the baseline is nonzero."""
-    return value / baseline if baseline else None
+    return value / baseline if value is not None and baseline else None
 
 
 def _scores(runs: list[Run]) -> dict[str, bool]:
@@ -87,7 +85,8 @@ def _summarize(runs: list[Run], questions: Run) -> Row:
     """Aggregate accuracy and costs for one pipeline across its rounds."""
     scores = _scores(runs)
     rows = [row for run in runs for row in run.values()]
-    times = [row["latency_s"] for row in rows]
+    cost_rows = [row for row in rows if not row["is_warmup"]]
+    times = [row["latency_s"] for row in cost_rows]
     return {
         "n": len(scores),
         "accuracy": mean(scores.values()),
@@ -101,17 +100,17 @@ def _summarize(runs: list[Run], questions: Run) -> Row:
         "unanswerable_accuracy": _mean(
             ok for qid, ok in scores.items() if questions[qid]["answer_kind"] == "unanswerable"
         ),
-        "budget_calls_per_question": mean(row["n_calls"] for row in rows),
-        "total_calls_per_question": mean(row["n_calls"] + row["n_retries"] for row in rows),
-        "input_tokens_per_question": mean(
-            sum(call["input_tokens"] for call in row["calls"]) for row in rows
+        "budget_calls_per_question": _mean(row["n_calls"] for row in cost_rows),
+        "total_calls_per_question": _mean(row["n_calls"] + row["n_retries"] for row in cost_rows),
+        "input_tokens_per_question": _mean(
+            sum(call["input_tokens"] for call in row["calls"]) for row in cost_rows
         ),
-        "output_tokens_per_question": mean(
-            sum(call["output_tokens"] for call in row["calls"]) for row in rows
+        "output_tokens_per_question": _mean(
+            sum(call["output_tokens"] for call in row["calls"]) for row in cost_rows
         ),
-        "mean_latency_s": mean(times),
-        "median_latency_s": median(times),
-        "max_input_tokens": max(row["max_input_tokens"] for row in rows),
+        "mean_latency_s": _mean(times),
+        "median_latency_s": median(times) if times else None,
+        "max_input_tokens": max((row["max_input_tokens"] for row in cost_rows), default=None),
     }
 
 
@@ -145,11 +144,11 @@ def _vram(rounds: list[Path], pipeline: str) -> Row:
     for folder in rounds:
         path = folder / "RUN_META.json"
         metadata.append(json.loads(path.read_text(encoding="utf-8")) if path.exists() else {})
-    pipeline_values = [meta.get("max_vram_mb_by_pipeline", {}).get(pipeline) for meta in metadata]
-    round_values = [meta.get("max_vram_mb") for meta in metadata]
+    pipeline_values = [(meta.get("max_vram_mib_by_pipeline") or {}).get(pipeline) for meta in metadata]
+    round_values = [meta.get("max_vram_mib") for meta in metadata]
     return {
-        "max_vram_mb": max(pipeline_values) if None not in pipeline_values else None,
-        "bundle_max_vram_mb": max(round_values) if None not in round_values else None,
+        "max_vram_mib": max(pipeline_values) if None not in pipeline_values else None,
+        "bundle_max_vram_mib": max(round_values) if None not in round_values else None,
     }
 
 

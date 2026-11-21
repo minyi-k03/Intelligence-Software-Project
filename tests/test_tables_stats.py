@@ -30,30 +30,31 @@ def write_mock_runs(root: Path, questions: list[dict]) -> None:
         folder = root / bundle / round_name
         folder.mkdir(parents=True)
         (folder / "RUN_META.json").write_text(
-            json.dumps({"max_vram_mb": 1000 + round_no, "max_vram_mb_by_pipeline": {"m": 800}}),
+            json.dumps({"max_vram_mib": 1000 + round_no, "max_vram_mib_by_pipeline": {"m": 800}}),
             encoding="utf-8",
         )
         for name in names:
-            rows = [{"is_warmup": True, "qid": questions[0]["qid"]}]
+            rows = []
             for question in reversed(questions) if name == "p1" else questions:
+                warmup = question["qid"] == questions[0]["qid"]
                 unanswerable = question["answer_kind"] == "unanswerable"
                 rows.append({
                     **{key: question[key] for key in ("qid", "type", "answer_kind")},
                     "bundle": bundle,
                     "round": round_name,
                     "pipeline": name,
-                    "is_warmup": False,
+                    "is_warmup": warmup,
                     "timeout": False,
                     "correct": name == "m" and round_no != 3,
                     "f1": 0.5 if question["answer_kind"] == "text" else None,
-                    "latency_s": round_no if name == "m" else 2,
-                    "max_input_tokens": 10,
-                    "n_calls": 1,
+                    "latency_s": 99 if warmup else (round_no if name == "m" else 2),
+                    "max_input_tokens": 99 if warmup else 10,
+                    "n_calls": 3 if warmup else 1,
                     "n_retries": int(name != "m"),
                     "calls": [
-                        {"input_tokens": 10, "output_tokens": round_no,
+                        {"input_tokens": 99 if warmup else 10, "output_tokens": 99 if warmup else round_no,
                          "truncated": False, "parse_ok": None},
-                    ] * (1 if name == "m" else 2),
+                    ] * ((3 if warmup else 1) + int(name != "m")),
                     "abstained": unanswerable or name == "p1",
                     "budget_exhausted": False,
                     "loop_breaks": 0,
@@ -89,8 +90,11 @@ class TestTablesStats(unittest.TestCase):
         assert m["accuracy"] == m["unanswerable_accuracy"] == 1
         assert m["text_f1"] == 0.5
         assert m["output_tokens_per_question"] == m["median_latency_s"] == 2
-        assert m["max_vram_mb"] == 800
-        assert m["bundle_max_vram_mb"] == 1003
+        assert m["mean_latency_s"] == 2
+        assert m["budget_calls_per_question"] == m["total_calls_per_question"] == 1
+        assert m["input_tokens_per_question"] == m["max_input_tokens"] == 10
+        assert m["max_vram_mib"] == 800
+        assert m["bundle_max_vram_mib"] == 1003
         router = next(row for row in tables["ablation"] if row["pipeline"] == "m_minus_router")
         assert router["time_ratio"] == router["total_calls_ratio"] == 2
         assert router["accuracy_delta"] == -1
@@ -103,6 +107,18 @@ class TestTablesStats(unittest.TestCase):
         assert p1["n_evidence_measured"] == 120
         assert p1["evidence_kept_rate"] == 0
         assert p1["parse_failure_count"] is None
+
+    def test_warmup_only(self) -> None:
+        """A single verified question still has a score, but no measured costs."""
+        runs = self.temp_path()
+        write_mock_runs(runs, list(read_jsonl(EVAL))[:1])
+        tables = build_tables(runs, EVAL, verification=True)
+        m = tables["main"][-1]
+        assert m["n"] == m["accuracy"] == tables["mcnemar"][0]["m_only"] == 1
+        assert m["text_f1"] == 0.5
+        for key in ("total_calls_per_question", "median_latency_s", "max_input_tokens"):
+            assert m[key] is None
+        assert tables["ablation"][0]["time_ratio"] is None
 
     def test_incomplete_ablation(self) -> None:
         """A partially measured ablation bundle must not produce official tables."""
@@ -122,8 +138,7 @@ class TestTablesStats(unittest.TestCase):
             for path in (runs / "main").glob(f"r*/{name}.jsonl"):
                 rows = list(read_jsonl(path))
                 for row in rows:
-                    if not row["is_warmup"]:
-                        row["correct"] = row["qid"] in correct_ids
+                    row["correct"] = row["qid"] in correct_ids
                 path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
         overall, hotpot, squad, gsm = build_tables(runs, EVAL, verification=True)["mcnemar"]
         for row in (overall, hotpot):
