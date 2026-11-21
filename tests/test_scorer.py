@@ -122,6 +122,19 @@ def test_count_numbers_counts_numbers_in_answer_part_only() -> None:
     assert count_numbers("Final answer: 18") == 1
 
 
+def test_count_numbers_edge_inputs() -> None:
+    """접두어 없는 출력은 전체에서 세고, 빈 출력·숫자 없는 답은 0."""
+    assert count_numbers("3 + 4") == 2
+    assert count_numbers("") == 0
+    assert count_numbers("Final answer: UNANSWERABLE") == 0
+
+
+def test_extract_number_thousands_separators() -> None:
+    """천 단위 쉼표는 여러 번 나와도 지우고, 3자리가 아닌 쉼표는 지우지 않는다."""
+    assert extract_number("1,000,000") == 1_000_000.0
+    assert extract_number("1,23") == 23.0
+
+
 # --- extract_final_answer -------------------------------------------------
 
 
@@ -186,6 +199,31 @@ def test_extract_final_answer_long_whitespace_output_is_fast() -> None:
     assert time.perf_counter() - start < 1.0
 
 
+def test_extract_final_answer_long_period_run_is_fast() -> None:
+    """마침표만 이어진 긴 출력에서 한 글자씩 잘라 내며 느려지지 않는다 (O(N))."""
+    start = time.perf_counter()
+    assert extract_final_answer("Final answer: " + "." * 1_000_000) == ""
+    assert time.perf_counter() - start < 1.0
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Final answer: Paris",
+        '**Final answer:** "The Eiffel Tower".',
+        "Final answer:\n***\n42",
+        "no prefix here.\nsecond line.",
+        "final answer: wrong\nFINAL ANSWER: 7.",
+        "Final answer: UNANSWERABLE.",
+        "",
+    ],
+)
+def test_extract_final_answer_is_idempotent(raw: str) -> None:
+    """이미 추출된 답에 다시 적용해도 값이 같다 (INTERFACES §6: 채점기가 재적용한다)."""
+    once = extract_final_answer(raw)
+    assert extract_final_answer(once) == once
+
+
 # --- score_numeric --------------------------------------------------------
 
 
@@ -203,6 +241,18 @@ def test_score_numeric_distinguishes_42_from_420() -> None:
 def test_score_numeric_wrong_when_no_number_in_prediction() -> None:
     """예측에 숫자가 없으면 오답."""
     assert score_numeric("UNANSWERABLE", "18") is False
+
+
+def test_score_numeric_handles_negative_and_comma_gold() -> None:
+    """정답이 음수이거나 쉼표를 포함해도 수치로 비교한다."""
+    assert score_numeric("Final answer: -5", "-5") is True
+    assert score_numeric("Final answer: 5", "-5") is False
+    assert score_numeric("Final answer: 1234", "1,234") is True
+
+
+def test_score_numeric_rejects_nearby_but_different_value() -> None:
+    """소수점 이하가 다른 값은 같은 수로 보지 않는다."""
+    assert score_numeric("Final answer: 5.001", "5") is False
 
 
 # --- score_text -----------------------------------------------------------
@@ -227,6 +277,29 @@ def test_score_text_takes_max_over_answer_candidates() -> None:
     em, f1 = score_text("Final answer: New York", ["NYC", "New York City"])
     assert em == 0.0
     assert f1 == pytest.approx(0.8)
+
+
+def test_score_text_f1_counts_duplicate_tokens_as_multiset() -> None:
+    """겹치는 토큰은 중복까지 센다 (집합이 아니라 멀티셋).
+
+    'cat cat dog' vs 'cat cat': 겹침 2 → 정밀도 2/3, 재현율 1 → F1 0.8.
+    집합으로 세면 겹침이 1이 되어 F1이 0.4로 떨어진다.
+    """
+    em, f1 = score_text("Final answer: cat cat dog", ["cat cat"])
+    assert em == 0.0
+    assert f1 == pytest.approx(0.8)
+
+
+def test_score_text_removes_all_three_articles() -> None:
+    """관사 a·an·the를 모두 지운다."""
+    assert score_text("Final answer: a dog", ["dog"])[0] == 1.0
+    assert score_text("Final answer: an apple", ["apple"])[0] == 1.0
+    assert score_text("Final answer: the cat", ["cat"])[0] == 1.0
+
+
+def test_score_text_prediction_empty_after_normalization_is_wrong() -> None:
+    """원문은 있지만 정규화 후 비는 예측(`the.`)은 정답이 `a`여도 (0, 0)."""
+    assert score_text("Final answer: the.", ["a"]) == (0.0, 0.0)
 
 
 def test_score_text_unanswerable_prediction_scores_zero() -> None:

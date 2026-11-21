@@ -189,31 +189,60 @@ Final answer: <short answer or UNANSWERABLE>
 
 ```
 results/runs/<bundle>/<round>/<pipeline>.jsonl
-  bundle   : main | ablation | dev
+  bundle   : main | ablation | dev   (검증 모드는 _scratch — git 제외)
   round    : r1 | r2 | r3
   pipeline : p0 | p0_raw | p1 | m | m_minus_router | m_minus_requery | ...
 results/runs/<bundle>/<round>/RUN_META.json
 ```
+
+- `main`·`ablation`은 평가 세트(`eval.jsonl`), `dev`는 개발 세트(`dev.jsonl`)만 읽는다. 짝이 맞지 않으면 러너가 멈춘다. `_scratch`는 둘 다 허용한다.
+- 라운드마다 파이프라인 실행 순서를 한 칸씩 돌려 바꾼다 (`r1`은 기본 순서, `r2`는 한 칸, `r3`은 두 칸). 본 비교의 4개 파이프라인에서 M이 3라운드에 서로 다른 순번에 놓인다.
+- 실행: `python -m scripts.run_eval --bundle <묶음> --round <라운드>`. 검증 모드는 `--verify N`(앞 N문항, `_scratch`). 세션이 끊기면 같은 명령을 다시 실행하면 이어 돈다.
+- 러너는 `scripts/run_eval.py`의 `PIPELINE_FACTORIES`에 등록된 항목으로 파이프라인을 만든다. 등록 형식은 둘이다.
+  - `"모듈:함수"`: 함수가 `Settings`를 받아 `(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다 (그래프를 한 번 만들어 재사용하는 M 등).
+  - `"call:모듈:함수"`: 함수가 `fn(qid, question, *, settings=None) -> PipelineResult` 형태다 (B-3의 `run_p0`·`run_p0_raw`·`run_p1`). 러너가 `settings=`를 미리 묶는다.
+  - (제안: B·A가 자기 파이프라인을 등록할 때 확인)
 
 ### 7.2 문항별 로그 한 줄 = 메타 + `PipelineResult` + 채점
 
 | 추가 필드 | 설명 |
 |---|---|
 | `qid`, `type`, `subtype`, `answer_kind` | 채점·집계용 (로그에는 유형을 남긴다). 집계에서 "텍스트 F1"처럼 문항 종류를 가를 때는 `answer_kind`로 거른다 |
-| `pipeline`, `bundle`, `round`, `order_idx` | 라운드 안 실행 순서 |
+| `pipeline`, `bundle`, `round` | 파이프라인 이름, 묶음, 라운드 |
+| `order_idx` | 이 파이프라인 안에서 문항 순번(0부터, 문항 세트 파일 순서). 파이프라인 사이의 실행 순서는 `RUN_META.json`의 `pipeline_order` |
+| `session_idx` | 이 문항을 돈 세션 번호(0부터) = `RUN_META.json`의 `sessions` 인덱스. 이어 돌기로 생긴 세션은 1 이상 |
 | `gold` | 정답 후보 |
 | `em`, `f1` | 텍스트 문항(`answer_kind=text`)은 SQuAD 정규화 EM·F1. **답할 수 없음 문항(`unanswerable`)은 EM과 F1이 같은 값**(기권하면 1.0, 아니면 0.0, SQuAD v2 방식). 수치 문항은 null |
 | `numeric_correct` | 수치 문항 (그 밖의 문항은 null) |
 | `correct` | 주 지표 기준 정답 여부 (텍스트는 EM, 답할 수 없음은 기권 여부, 수치는 수치 비교) |
-| `timeout` | 120초 초과 여부 (초과 시 `correct=false`) |
-| `latency_s` | 문항 입력 ~ 최종 답 |
-| `max_input_tokens` | 이 문항에서 호출별 입력 토큰의 최대값 |
-| `evidence_kept` | 근거 문장 보존 여부 (HotpotQA, 압축 사용 시) |
-| `is_warmup` | 첫 1문항(워밍업) 여부 — 집계에서 제외 |
+| `timeout` | 120초 초과 여부 (초과 시 `correct=false`). 시간 초과 문항은 `answer=""`, `error="timeout"`이고, 작업을 중단하므로 `calls`는 비어 있다. `latency_s`는 제한 시간(120) 이상의 값이다 |
+| `latency_s` | 문항 입력 ~ 최종 답. 러너가 직접 잰다 |
+| `max_input_tokens` | 이 문항에서 호출별 입력 토큰의 최대값 (호출 기록이 없으면 0) |
+| `evidence_kept` | 근거 문장 보존 여부. 검색된 문단 안의 근거 문장(`supporting_facts`)이 모두 남긴 문장 창(`compress.window` 반경)에 덮이면 true (실험 C-2의 보존율과 같은 기준: 검색이 못 찾은 문단의 근거 문장은 세지 않는다). HotpotQA가 아니거나, 압축 단계가 없거나(`kept_windows`가 비어 있음: P0·P1 등), 검색된 근거 문장이 없으면 null. `m_minus_compress`는 문단 전체를 창으로 남기므로(`full_paragraphs`) 검색된 근거 문장이 있으면 늘 true다 |
+| `is_warmup` | 파이프라인마다 첫 1문항(`order_idx=0`)이 워밍업이다. **시간·비용 집계에서만 제외**하고, 정확도·McNemar는 워밍업 문항을 포함한 전체 문항으로 낸다 (A 제안, D 확인 필요) |
+
+로그 한 줄에는 `PipelineResult`의 모든 필드(`answer`, `abstained`, `calls` 등)가 최상위에 그대로 펼쳐져 있고, `calls`의 각 원소는 `CallRecord` 필드를 가진 객체다. 파이프라인이 예외를 던지면 러너는 멈추지 않고 `answer=""`, `error="<예외 종류>: <메시지>"`인 오답 한 줄을 남긴다.
 
 ### 7.3 `RUN_META.json`
 
 git 커밋, 세 데이터 파일 해시, 설정 전체 스냅샷, GPU 이름·드라이버, Ollama 버전, 모델 태그, 실행 순서, 시작·종료 시각, 최대 VRAM(nvidia-smi 0.5초 간격 최대치).
+
+| 키 | 내용 |
+|---|---|
+| `bundle`, `round`, `item_set` | 묶음, 라운드, 읽은 문항 세트(`eval`\|`dev`) |
+| `model_tag`, `settings` | 모델 태그, 설정 전체 스냅샷(`Settings.to_dict()`) |
+| `data_hashes` | `eval.jsonl`·`dev.jsonl`·`corpus.jsonl`의 SHA-256 (시작 전에 `data/README.md` 표와 비교해 통과한 값) |
+| `pipeline_order` | 이 라운드의 파이프라인 실행 순서 |
+| `git_commit`, `git_dirty`, `gpu`(`name`, `driver`), `ollama_version` | 가장 최근 세션의 환경. 알 수 없으면 null |
+| `max_vram_mib_by_pipeline`, `max_vram_mib` | 파이프라인별 최대 VRAM(MiB)과 그 최댓값. 파이프라인마다 샘플러를 따로 돌린다. `nvidia-smi`가 없으면 null |
+| `started_at`, `finished_at` | 처음 시작과 마지막 종료 시각(UTC). 중간에 끊긴 라운드는 `finished_at`이 null |
+| `sessions` | 세션(시작~끊김/종료)마다 시작·종료 시각과 환경. 이어 돌 때 GPU·커밋이 달라졌는지 여기서 확인한다 |
+
+- `nvidia-smi`의 `memory.used`는 GPU 전체 사용량(다른 프로세스 포함)이다. GPU가 여러 장이면 가장 큰 값을 쓴다.
+- 이어 돌 때 `settings`·`data_hashes`·`pipeline_order`·`bundle`·`round`·`item_set`이 처음과 다르면 러너가 멈춘다 (한 라운드에 조건이 섞이므로 새 라운드로 돌린다).
+- 시간 초과한 작업은 취소 신호를 받는다. 모델 호출에서 막혀 신호가 닿지 않고 대기 시간(60초)을 넘기면 다음 문항의 측정이 오염되므로 러너가 `StuckWorkerError`로 멈춘다. 그 문항은 기록되지 않아 같은 명령으로 이어 돌면 다시 돈다.
+- 이어 돈 세션의 첫 문항은 워밍업으로 표시하지 않는다(`order_idx=0`만 표시). 세션이 끊긴 뒤 모델이 다시 로딩되면 그 문항의 시간이 튈 수 있으므로, 시간 집계에서는 파이프라인마다 `session_idx`가 1 이상인 세션의 첫 문항(가장 작은 `order_idx`)을 이상치 후보로 확인한다.
+- 동결 해시는 CLI가 파이프라인을 만들기 전(코퍼스·검색 인덱스를 읽기 전)에 한 번, `run_round`가 기록을 시작하기 전에 한 번 확인한다.
 
 ---
 
