@@ -15,7 +15,7 @@
 | 구간 | 기간 | 상태 |
 |---|---|---|
 | 1주차 | 11/11 ~ 11/17 | 완료. 동결·설정·토크나이저·BM25·계산기·압축·예산·루프 끊기·채점기 머지 |
-| 2주차 | 11/18 ~ 11/24 | 진행 중. A-3 머지(PR #14). B-3(PR #13)·D-2(PR #15) 리뷰 대기. B-4·A-4·C-3 미착수 |
+| 2주차 | 11/18 ~ 11/24 | 진행 중. A-3(PR #14)·B-3(PR #13) 머지. A-4 완료(`YongMin`, PR 대기). D-2(PR #15) 리뷰 대기. B-4·C-3 미착수 |
 | 3주차 | 11/25 ~ 11/27 | 미착수 |
 | 측정 | 11/28 ~ 12/03 | 미착수 |
 | 마무리 | 12/04 | 미착수 |
@@ -57,7 +57,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR A-1 데이터·코퍼스 동결 | 11/13 | ✅ | PR #6, 동결 커밋 `d95beb4`. 교차 확인 완료([data/README.md](../data/README.md)) |
 | PR A-2 채점기 | 11/17 | ✅ | `src/eval/scorer.py`, `tests/test_scorer.py` (PR #12, `24b8e0a`). EM/F1·수치·기권 채점, 공통 답 추출 |
 | PR A-3 로거·VRAM·러너 | 11/19 | ✅ | `src/eval/{vram,logger,runner}.py`, `scripts/run_eval.py`, `tests/test_eval_io.py`·`tests/test_runner.py`·`tests/test_run_eval.py` (PR #14). Antigravity 교차 검증(11/20, CPU 전용 환경) 지적 반영 완료. 파이프라인 등록(`PIPELINE_FACTORIES`)은 `"모듈:함수"`(생성 함수)와 `"call:모듈:함수"`(B-3의 `run_p0(qid, question, *, settings)` 형태) 두 형식을 받는다. M은 A-5b가 채운다. 실환경 검증 완료(11/20, Colab T4 + Ollama `qwen2.5:7b-instruct-q4_K_M`): 테스트 262개 통과, `--verify`로 로그 필드·이어 돌기·`RUN_META.json` 확인, `data/frozen` 무변경 |
-| PR A-4 라우터 | 11/20 | 🔄 | `src/meba/router.py`, `tests/test_router.py`. `route_question(question, budget) -> RouterOutcome`. 첫 줄 `ROUTE: math\|search`, `ROUTE:` 줄이 없으면 계산기 호출 시 `math`·그 밖에는 `search`(직답 경로 없음). 계산기를 쓰면 마무리 호출(`cap.finalize`). 교차 리뷰 반영 완료, CPU 테스트 + 실제 `ChatOllama` 페이로드 확인(클라이언트 가로채기). **남은 일: Colab 실모델로 개발 세트 몇 문항 `ROUTE:` 형식 준수율 확인** |
+| PR A-4 라우터 | 11/20 | ✅ | `src/meba/router.py`, `tests/test_router.py`. `route_question(question, budget) -> RouterOutcome`. 첫 줄 `ROUTE: math\|search`, `ROUTE:` 줄이 없으면 계산기 호출 시 `math`·그 밖에는 `search`(직답 경로 없음). 계산기를 쓰면 마무리 호출(`cap.finalize`). 교차 리뷰 반영 완료. 실모델 검증(11/21, Colab T4, 개발 세트 60문항): 경로 59/60, 직답 경로 0/40, GSM8K 수학 경로 17/20, 잘림 0건([기록](experiments/2026-11-21-a-router-dev.md)). Ollama 반복 중단 오류 1건은 D에 공유 |
 | PR A-5a 그래프 골격 | 11/23 | ⬜ | |
 | PR A-5b M 통합 | 11/25 | ⬜ | |
 
