@@ -36,7 +36,7 @@ def test_clean_followup() -> None:
 
 
 def test_allows_retrieve_until_max_requery_is_used() -> None:
-    rq = Requery(QUESTION, max_requery=2)
+    rq = Requery(max_requery=2)
     assert rq.allow_retrieve and rq.n_requery == 0
 
     assert rq.next_query("teacher of Theophrastus") == "teacher of Theophrastus"
@@ -51,33 +51,68 @@ def test_allows_retrieve_until_max_requery_is_used() -> None:
 
 def test_default_limit_comes_from_settings() -> None:
     limit = get_settings().budget.max_requery
-    rq = Requery(QUESTION, max_requery=limit)
+    rq = Requery(max_requery=limit)
     for i in range(limit):
         assert rq.next_query(f"distinct topic number{i}") is not None
     assert not rq.allow_retrieve
 
 
 def test_zero_max_requery_never_allows_retrieve() -> None:
-    rq = Requery(QUESTION, max_requery=0)
+    rq = Requery(max_requery=0)
     assert not rq.allow_retrieve
     assert rq.next_query("teacher of Theophrastus") is None
 
 
-def test_followup_equal_to_question_is_rejected_without_using_a_requery() -> None:
-    rq = Requery(QUESTION, max_requery=2)
-    assert rq.next_query("who did neleus of scepsis study under") is None
-    assert rq.n_requery == 0 and rq.allow_retrieve
-
-
-def test_repeated_followup_is_rejected() -> None:
-    rq = Requery(QUESTION, max_requery=2)
+def test_requery_does_not_block_repeats_itself() -> None:
+    # 중복 검색은 루프 끊기의 일이다. 여기서 막으면 loop_breaks가 안 세지고 m_minus_loop_breaker를 만들 수 없다
+    rq = Requery(max_requery=2)
+    assert rq.next_query("who did neleus of scepsis study under") is not None
     assert rq.next_query("Theophrastus teacher") is not None
-    assert rq.next_query("the teacher of THEOPHRASTUS.") is None
-    assert rq.n_requery == 1
+    assert rq.n_requery == 2
+
+
+def run_search_path(breaker: LoopBreaker | None, followups: list[str]) -> tuple[list[str], int]:
+    """질문으로 1차 검색 → 후속 검색어로 재검색. (실제로 검색한 검색어, 루프 끊기 횟수)."""
+    index = BM25Index(DOCS)
+    searched: list[str] = []
+    rq = Requery(max_requery=len(followups))
+
+    def search(query: str) -> bool:
+        """검색하고, 루프 끊기에 막혔으면 True(바로 답하기)."""
+        def run() -> list:
+            searched.append(query)
+            return index.search(query, k=1)
+        if breaker is None:
+            run()
+            return False
+        return breaker.run("bm25_search", {"query": query}, run).answer_directly
+
+    search(QUESTION)
+    for missing in followups:
+        followup = rq.next_query(missing)
+        if followup is None or search(followup):
+            break
+    return searched, breaker.loop_breaks if breaker else 0
+
+
+def test_loop_breaker_catches_followup_equal_to_question() -> None:
+    searched, breaks = run_search_path(LoopBreaker(normalizer=search_args_key), ["who did neleus of scepsis study under", "Theophrastus"])
+    assert searched == [QUESTION] and breaks == 1
+
+
+def test_loop_breaker_catches_repeated_followup() -> None:
+    searched, breaks = run_search_path(LoopBreaker(normalizer=search_args_key), ["Theophrastus teacher", "the teacher of THEOPHRASTUS."])
+    assert searched == [QUESTION, "Theophrastus teacher"] and breaks == 1
+
+
+def test_without_loop_breaker_repeats_are_searched_again() -> None:
+    # m_minus_loop_breaker: 반복 허용
+    searched, breaks = run_search_path(None, ["Theophrastus teacher", "the teacher of THEOPHRASTUS."])
+    assert searched == [QUESTION, "Theophrastus teacher", "the teacher of THEOPHRASTUS"] and breaks == 0
 
 
 def test_missing_without_any_token_is_rejected() -> None:
-    rq = Requery(QUESTION, max_requery=2)
+    rq = Requery(max_requery=2)
     for missing in ("", "   ", '"."', "?!"):
         assert rq.next_query(missing) is None
     assert rq.n_requery == 0
@@ -85,7 +120,7 @@ def test_missing_without_any_token_is_rejected() -> None:
 
 def test_stopword_only_followup_is_searchable_like_the_search_tool() -> None:
     # 공용 토크나이저는 전부 불용어인 검색어("The Who")를 지우지 않는다
-    rq = Requery(QUESTION, max_requery=2)
+    rq = Requery(max_requery=2)
     assert rq.next_query("The Who") == "The Who"
 
 
@@ -106,7 +141,7 @@ def test_search_args_key_works_as_loop_breaker_normalizer() -> None:
 def test_search_path_walkthrough_with_scripted_judgments() -> None:
     """검색 → 압축 → 판정(RETRIEVE) → 재검색 → 압축 → 마지막 판정이 이어지는지 확인한다."""
     index = BM25Index(DOCS)
-    rq = Requery(QUESTION, max_requery=2)
+    rq = Requery(max_requery=2)
 
     first = compress(QUESTION, index.search(QUESTION, k=1), m=2, window=1, tokenizer=tokenize)
     assert "Aristotle" in first.context and "Peripatetic" not in first.context
@@ -123,4 +158,4 @@ def test_search_path_walkthrough_with_scripted_judgments() -> None:
     assert rq.next_query("Scepsis town") is not None
     assert not rq.allow_retrieve
     last = parse_judgment('{"reasoning": "r", "decision": "RETRIEVE", "missing": "x", "answer": ""}', allow_retrieve=rq.allow_retrieve)
-    assert (last.decision, last.parse_ok) == ("ABSTAIN", False)
+    assert (last.decision, last.answer, last.parse_ok, last.abstained) == ("ANSWER", "", False, False)

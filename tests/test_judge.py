@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -11,9 +12,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from src.baselines.prompts import CONTENT_INSTRUCTION
 from src.config.settings import get_settings
-from src.eval.scorer import is_abstained
+from src.eval.scorer import extract_final_answer, is_abstained
 from src.meba.budget import BudgetedLLM
 from src.meba.judge import (
+    _response_text,
     build_judge_messages,
     judge,
     judge_schema,
@@ -152,18 +154,31 @@ def test_retrieve_in_last_judgment_is_a_format_violation() -> None:
     with_answer = parse_judgment(reply("RETRIEVE", "1989", "more"), allow_retrieve=False)
     assert (with_answer.decision, with_answer.answer, with_answer.missing, with_answer.parse_ok) == ("ANSWER", "1989", "", False)
     without = parse_judgment(reply("RETRIEVE", "", "more"), allow_retrieve=False)
-    assert (without.decision, without.answer, without.parse_ok) == ("ABSTAIN", "UNANSWERABLE", False)
+    assert (without.decision, without.answer, without.parse_ok, without.abstained) == ("ANSWER", "", False, False)
 
 
-def test_broken_json_becomes_abstain_with_parse_failure() -> None:
+def test_broken_json_becomes_empty_answer_not_abstain() -> None:
+    # 깨진 출력을 기권으로 바꾸면 답할 수 없음 문항에서 정답이 된다 (EVALUATION §3.3)
     for raw in ('{"reasoning": "The evidence says', "", "not json", "[1, 2]"):
-        j = parse_judgment(raw, allow_retrieve=True, truncated=True)
-        assert (j.decision, j.answer, j.parse_ok, j.truncated, j.raw) == ("ABSTAIN", "UNANSWERABLE", False, True, raw)
+        for allow_abstain in (True, False):
+            j = parse_judgment(raw, allow_retrieve=True, allow_abstain=allow_abstain, truncated=True)
+            assert (j.decision, j.answer, j.parse_ok, j.truncated, j.abstained, j.raw) == ("ANSWER", "", False, True, False, raw)
 
 
-def test_broken_output_without_abstain_option_is_empty_answer() -> None:
-    j = parse_judgment("not json", allow_retrieve=True, allow_abstain=False)
-    assert (j.decision, j.answer, j.parse_ok) == ("ANSWER", "", False)
+def test_invalid_decision_keeps_extracted_answer() -> None:
+    j = parse_judgment(reply("MAYBE", "Aristotle"), allow_retrieve=True)
+    assert (j.decision, j.answer, j.parse_ok) == ("ANSWER", "Aristotle", False)
+
+
+def test_answer_goes_through_shared_final_answer_extraction() -> None:
+    j = parse_judgment(reply("ANSWER", '"Aristotle."'), allow_retrieve=True)
+    assert j.answer == extract_final_answer('"Aristotle."') == "Aristotle"
+
+
+def test_decision_with_trailing_period_is_accepted() -> None:
+    assert parse_judgment(reply("ANSWER.", "7"), allow_retrieve=True).parse_ok
+    tag = parse_judgment("Fine.\nDECISION: ANSWER.\nANSWER: 7.", allow_retrieve=True, output_format="tag")
+    assert (tag.decision, tag.answer, tag.parse_ok) == ("ANSWER", "7", True)
 
 
 def test_json_wrapped_in_code_fence_and_lowercase_decision() -> None:
@@ -196,7 +211,7 @@ def test_tag_tolerates_bold_and_takes_last_occurrence() -> None:
 
 def test_tag_without_decision_line_is_parse_failure() -> None:
     j = parse_judgment("I think the answer is Paris.", allow_retrieve=True, output_format="tag")
-    assert (j.decision, j.answer, j.parse_ok) == ("ABSTAIN", "UNANSWERABLE", False)
+    assert (j.decision, j.answer, j.parse_ok, j.abstained) == ("ANSWER", "", False, False)
 
 
 def test_tag_answer_line_is_not_confused_with_decision_value() -> None:
@@ -251,7 +266,7 @@ def test_truncation_after_retry_is_reported_separately_from_parse_failure() -> N
     llm, _, _ = make_llm([('{"reasoning": "cut', True), ('{"reasoning": "cut again', True)])
     j = judge(llm, "q", "e", allow_retrieve=True)
 
-    assert j is not None and (j.decision, j.parse_ok, j.truncated) == ("ABSTAIN", False, True)
+    assert j is not None and (j.decision, j.answer, j.parse_ok, j.truncated, j.abstained) == ("ANSWER", "", False, True, False)
     assert llm.calls[-1].parse_ok is False and llm.calls[-1].truncated is True
 
 
@@ -263,3 +278,19 @@ def test_returns_none_when_budget_is_exhausted() -> None:
 
     assert judge(llm, "q", "e", allow_retrieve=False) is None
     assert llm.budget_exhausted and len(created) == max_calls
+
+
+def test_response_text_handles_none_and_content_blocks() -> None:
+    assert _response_text(SimpleNamespace(content=None)) == ""
+    assert _response_text(SimpleNamespace(content=["a", {"text": "b"}, {"text": None}, {"type": "x"}])) == "ab"
+    assert _response_text(object()) == ""
+
+
+def test_broken_output_is_not_scored_correct_on_unanswerable_items() -> None:
+    from src.eval.scorer import score_unanswerable
+
+    for raw in ("", '{"reasoning": "cut', "not json"):
+        j = parse_judgment(raw, allow_retrieve=False, truncated=True)
+        assert not score_unanswerable(j.answer)
+    explicit = parse_judgment(reply("ABSTAIN"), allow_retrieve=False)
+    assert score_unanswerable(explicit.answer)

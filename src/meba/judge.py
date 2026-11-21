@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 from src.baselines.prompts import CONTENT_INSTRUCTION
-from src.eval.scorer import UNANSWERABLE, is_abstained
+from src.eval.scorer import UNANSWERABLE, extract_final_answer, is_abstained
 from src.meba.budget import BudgetedLLM
 
 Decision = Literal["ANSWER", "RETRIEVE", "ABSTAIN"]
@@ -40,8 +40,9 @@ _NO_EVIDENCE = "(no evidence was found)"
 class Judgment:
     """근거 판정 한 번의 결과.
 
-    decision: 허용된 판정 값으로 정리한 판정
-    answer: ANSWER면 답, ABSTAIN이면 "UNANSWERABLE", RETRIEVE면 ""
+    decision: 허용된 판정 값으로 정리한 판정. 형식 위반이면 ANSWER
+    answer: `extract_final_answer`를 거친 답. ABSTAIN이면 "UNANSWERABLE", RETRIEVE면 "",
+        형식 위반이면 꺼낸 답 그대로이고 없으면 "" (오답)
     missing: RETRIEVE일 때의 빠진 정보, 그 외에는 ""
     reasoning: 모델이 쓴 서술
     parse_ok: 출력이 약속한 형식대로였는가 (허용되지 않은 판정 값도 False)
@@ -193,7 +194,7 @@ def _parse_tag_fields(raw: str) -> dict[str, str] | None:
     found: dict[str, str] = {}
     first_tag = len(raw)
     for match in _TAG_LINE.finditer(raw):
-        found[match.group(1).lower()] = _clean(match.group(2)).strip("*_ ")
+        found[match.group(1).lower()] = _clean(match.group(2)).strip("*_ .")
         first_tag = min(first_tag, match.start())
     if "decision" not in found:
         return None
@@ -215,9 +216,10 @@ def parse_judgment(
 ) -> Judgment:
     """모델 출력을 `Judgment`로 바꾼다. 예외를 던지지 않는다.
 
-    형식이 깨졌거나 허용되지 않은 판정 값이면 `parse_ok=False`로 두고 다음과 같이 정리한다.
-    - 답이 있으면 ANSWER
-    - 답이 없으면 ABSTAIN (ABSTAIN이 허용되지 않으면 빈 답의 ANSWER)
+    형식이 깨졌거나 허용되지 않은 판정 값이면 `parse_ok=False`로 두고 ANSWER로 정리한다.
+    답은 꺼낸 것이 있으면 그대로, 없으면 빈 답이다. 형식 위반을 기권으로 바꾸면
+    답할 수 없음 문항에서 깨진 출력이 정답이 되므로 바꾸지 않는다 (EVALUATION §3.3).
+    답은 모든 파이프라인과 같은 `extract_final_answer`로 정리한다 (INTERFACES §6).
 
     Args:
         raw: 모델 출력 원문
@@ -232,13 +234,12 @@ def parse_judgment(
     fields = _parse_json_fields(raw) if output_format == "json" else _parse_tag_fields(raw)
     allowed = allowed_decisions(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain)
     fields = fields or {"reasoning": "", "decision": "", "missing": "", "answer": ""}
-    decision = fields["decision"].upper()
-    answer = fields["answer"]
+    decision = fields["decision"].strip(" .*_").upper()
+    answer = extract_final_answer(fields["answer"])
     parse_ok = decision in allowed
 
     if not parse_ok:
-        has_answer = bool(answer) and not is_abstained(answer)
-        decision = "ANSWER" if has_answer or not allow_abstain else "ABSTAIN"
+        decision = "ANSWER"
 
     if decision == "ABSTAIN":
         answer = UNANSWERABLE
@@ -259,13 +260,17 @@ def parse_judgment(
 
 
 def _response_text(response: Any) -> str:
-    """모델 응답에서 텍스트를 꺼낸다 (내용이 조각 리스트로 오는 경우 포함)."""
-    content = getattr(response, "content", response)
+    """모델 응답에서 텍스트를 꺼낸다. 내용이 조각 리스트면 이어 붙이고, 없으면 ""."""
+    content = getattr(response, "content", None)
     if isinstance(content, str):
         return content
-    if isinstance(content, Sequence):
-        return "".join(part if isinstance(part, str) else str(part.get("text", "")) for part in content)
-    return str(content)
+    if isinstance(content, list):
+        return "".join(
+            part if isinstance(part, str) else str(part.get("text") or "")
+            for part in content
+            if isinstance(part, (str, dict))
+        )
+    return ""
 
 
 def judge(

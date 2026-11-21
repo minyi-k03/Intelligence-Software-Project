@@ -1,7 +1,7 @@
 """다중 홉 재검색 — 핵심 부품, 전략 ③ (SPEC §4·§5, 담당 C).
 
-RETRIEVE 판정의 빠진 정보를 후속 검색어로 다듬고, 문항당 재검색 횟수(`budget.max_requery`)와
-이미 한 검색을 기억한다. 모델을 부르지 않는다.
+RETRIEVE 판정의 빠진 정보를 후속 검색어로 다듬고, 문항당 재검색 횟수(`budget.max_requery`)를
+센다. 같은 검색의 반복은 루프 끊기가 막는다. 모델을 부르지 않는다.
 """
 
 from __future__ import annotations
@@ -54,18 +54,20 @@ def clean_followup(missing: str) -> str:
 
 
 class Requery:
-    """한 문항의 재검색 상태. 문항마다 새로 만든다.
+    """한 문항의 재검색 횟수와 후속 검색어. 문항마다 새로 만든다.
+
+    같은 검색을 다시 하는지는 여기서 막지 않는다. 그건 루프 끊기(`LoopBreaker`)의 일이며,
+    `search_args_key`를 정규화 함수로 넘기면 검색 결과가 같아지는 검색어끼리 중복으로 잡힌다.
+    그래야 `loop_breaks`가 집계되고 `m_minus_loop_breaker`에서 반복을 허용할 수 있다.
 
     Args:
-        question: 질문 원문 (1차 검색어)
         max_requery: 재검색 최대 횟수 (`budget.max_requery`). 0이면 재검색 절제 변형
         tokenizer: 검색 도구와 같은 토크나이저
     """
 
-    def __init__(self, question: str, max_requery: int, tokenizer: Tokenizer = tokenize) -> None:
+    def __init__(self, max_requery: int, tokenizer: Tokenizer = tokenize) -> None:
         self._max = max_requery
         self._tokenizer = tokenizer
-        self._seen: set[QueryKey] = {query_key(question, tokenizer)}
         self.queries: list[str] = []
 
     @property
@@ -85,18 +87,13 @@ class Requery:
             missing: RETRIEVE 판정의 빠진 정보
 
         Returns:
-            후속 검색어. 아래 경우에는 재검색하지 않고 None을 돌려준다.
+            후속 검색어. 재검색 횟수를 다 썼거나 검색어로 쓸 토큰이 없으면 None이고,
             호출한 쪽은 지금 근거로 RETRIEVE 없는 판정을 받으면 된다.
-            - 재검색 횟수를 다 썼다
-            - 검색어로 쓸 토큰이 없다
-            - 질문이나 이전 후속 검색어와 검색 결과가 같아진다
         """
         if not self.allow_retrieve:
             return None
         followup = clean_followup(missing)
-        key = query_key(followup, self._tokenizer)
-        if not key or key in self._seen:
+        if not self._tokenizer(followup):
             return None
-        self._seen.add(key)
         self.queries.append(followup)
         return followup
