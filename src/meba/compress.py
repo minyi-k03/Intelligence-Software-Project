@@ -11,12 +11,10 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from src.tools.tokenizer import BM25_B, BM25_K1
+
 Tokenizer = Callable[[str], list[str]]
 Paragraph = Mapping[str, Any]
-
-# 검색 도구(B)의 BM25와 같은 값을 써야 한다.
-BM25_K1 = 1.5
-BM25_B = 0.75
 
 
 @dataclass(frozen=True)

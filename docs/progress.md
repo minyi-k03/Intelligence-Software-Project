@@ -77,7 +77,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 |---|---|---|---|
 | PR C-1 문장 창 압축 | 11/17 | ✅ | `src/meba/compress.py`, `tests/test_compress.py` (PR #4) |
 | 실험 C-2 `k`×`m` 측정 | 11/19 | ✅ | [기록](experiments/2026-11-15-c-compress-m.md), `scripts/measure_compress_m.py`. 권장 m: k=3 → 6, k=5 → 7, k=8 → 10 |
-| PR C-3 근거 판정·재검색 | 11/23 | ⬜ | 선행 D-1 (없으면 mock 상한 래퍼) |
+| PR C-3 근거 판정·재검색 | 11/23 | ✅ | `src/meba/judge.py`, `src/meba/requery.py`, `tests/test_judge.py`, `tests/test_requery.py`. 가짜 모델로 검증, 실제 Ollama 확인은 통합(A-5b)·C-4에서 |
 | 실험 C-4 JSON vs 태그 | 11/25 | ⬜ | |
 | PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | |
 
