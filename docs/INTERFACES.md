@@ -156,10 +156,9 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 **① 내용 문장** — P0 · P1 · M 근거 판정이 같은 상수를 그대로 씁니다.
 
 ```text
-Answer with a short answer only: a few words, a name, a date, or a number.
-Do not explain. If the answer is a number, write only the number.
-If the question cannot be answered from the available information,
-reply exactly: UNANSWERABLE
+Give a short final answer only: a few words, a name, a date, or a number.
+Do not include explanations inside the final answer line. If the answer is a number, write only the number.
+If the question cannot be answered, reply exactly: UNANSWERABLE
 ```
 
 **② 형식 줄** — 자유 서술로 답하는 호출(P0 · P1 · M 수학 경로)에만 붙입니다.

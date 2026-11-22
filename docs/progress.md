@@ -27,7 +27,6 @@
 | 항목 | 기한 | 막고 있는 작업 | 담당 |
 |---|---|---|---|
 | TBD #6 라운드 간 결과가 다를 때 대표값 규칙 | 11/16 (지남) | PR D-2 | D (PR #15에서 "3라운드 다수결" 제안, 머지 대기) |
-| 실험 B-4 P1 개발 세트 로그 | 11/20 | 분석 D-3, `k`·`m` 확정 | B (선행 PR B-3 #13 머지) |
 
 TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6과 [EVALUATION.md](EVALUATION.md) §3에 반영됐다.
 
@@ -68,8 +67,8 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR B-1 설정·ChatOllama·콜백 | 11/13 | ✅ | `configs/default.yaml`, `src/config/{settings,llm,callbacks}.py`, `tests/test_config.py` (PR #3) |
 | PR B-2a 공용 토크나이저 | 11/13 | ✅ | `src/tools/tokenizer.py`, `tests/test_tools.py` (PR #5) |
 | PR B-2b BM25 검색·계산기 | 11/16 | ✅ | `src/tools/{bm25_search,calculator,__init__}.py`, `tests/test_tools.py` (PR #9) |
-| PR B-3 P0·P0-raw·P1 | 11/18 | ✅ | `src/baselines/{prompts,p0,p1_react,__init__}.py`, `tests/test_baselines.py` |
-| 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ⬜ | |
+| PR B-3 P0·P0-raw·P1 | 11/18 | ✅ | `src/baselines/{prompts,p0,p1_react,__init__}.py`, `tests/test_baselines.py` (PR #13) |
+| 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ✅ | [기록](experiments/2026-11-21-b-retrieval-k.md), `scripts/measure_retrieval_k.py`, `configs/default.yaml` (`k=5, m=7`), `results/runs/dev/r1/p1.jsonl` |
 | PR B-5 Colab 노트북 (A에서 이관 제안) | 11/26 | ⬜ | 이관은 팀 확인 필요 |
 
 ### C · 조환호
@@ -108,8 +107,8 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 
 | 항목 | 현재 값 | 확정 예정 |
 |---|---|---|
-| `retrieval.k` | 3 (`configs/default.yaml`의 임시값) | 실험 B-4 (11/20) |
-| `compress.m` | 3 (임시값, 보존율 70~77%로 기준 미달) | 실험 C-2 완료. B-4에서 k가 정해지면 k=3 → 6, k=5 → 7, k=8 → 10으로 반영 |
+| `retrieval.k` | 5 (`configs/default.yaml` 확정) | 실험 B-4 완료 (1차 검색 any_gold 40/40, SQuAD2 20/20) |
+| `compress.m` | 7 (`configs/default.yaml` 확정) | 실험 C-2 · B-4 완료 (k=5 대응 권장값, 보존율 92%, 글자 수 47% 감소) |
 | 의존성 `langchain>=1.0.0` | P1 `create_agent` 지원 위해 `requirements.txt` 상향 완료 | PR B-3에서 반영 |
 
 ## 기타

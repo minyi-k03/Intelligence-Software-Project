@@ -41,8 +41,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.cap.judge, 256)
         self.assertEqual(settings.cap.retry_multiplier, 2)
 
-        self.assertEqual(settings.retrieval.k, 3)
-        self.assertEqual(settings.compress.m, 3)
+        self.assertEqual(settings.retrieval.k, 5)
+        self.assertEqual(settings.compress.m, 7)
         self.assertEqual(settings.compress.window, 1)
         self.assertEqual(settings.p1.max_steps, 7)
         self.assertEqual(settings.run.timeout_s, 120)
