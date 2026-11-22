@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.measure_retrieval_k import RECOMMENDED_M_BY_K, evaluate_k
+from scripts.measure_retrieval_k import RECOMMENDED_M_BY_K, RetrievalMetrics, evaluate_k
 from src.tools.bm25_search import BM25Index
 
 SAMPLE_DOCS = [
@@ -55,8 +55,9 @@ class TestMeasureRetrievalK(unittest.TestCase):
         index = BM25Index(SAMPLE_DOCS)
         res = evaluate_k(index, SAMPLE_ITEMS, k=3, m=6, window=1)
 
-        self.assertEqual(res["k"], 3)
-        self.assertEqual(res["m"], 6)
+        self.assertIsInstance(res, RetrievalMetrics)
+        self.assertEqual(res.k, 3)
+        self.assertEqual(res.m, 6)
         self.assertEqual(res["n_items"], 2)
         self.assertEqual(res["any_hits"], 2)
         self.assertEqual(res["all_hits"], 2)

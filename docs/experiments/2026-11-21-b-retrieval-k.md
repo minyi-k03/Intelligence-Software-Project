@@ -4,7 +4,7 @@
 - 담당: B (이현성)
 - 관련 부품 / 설정 키: BM25 문단 검색(`retrieval.k`), 검색 결과 압축(`compress.m` — 실험 C-2 표 연동), 기준선 P1 ReAct
 - 실행 로그: `results/runs/dev/r1/p1.jsonl` (`python -m scripts.measure_retrieval_k` 및 Colab T4 `python -m scripts.run_eval --bundle dev --round r1 --pipelines p1`)
-- git 커밋: `main` @ `176a4e8` (PR #13 B-3 · PR #14 A-3 병합 직후)
+- git 커밋: `main` @ `176a4e8` (PR #13 B-3 · PR #14 A-3 병합 직후; Colab 실행 시점 로컬 작업 커밋 `RUN_META.json.git_commit = fff578c1`)
 - 데이터: `data/frozen/dev.jsonl` (`8f18f76d…`), `data/frozen/corpus.jsonl` (`d562adc1…`)
 
 ## 질문
@@ -64,9 +64,9 @@ Colab(T4, `qwen2.5:7b-instruct-q4_K_M`, `temperature=0`)에서 초안 문구로 
 |---|---|---|---|---|
 | ① 초안 `CONTENT_INSTRUCTION` + 기본 `P1_TOOL_GUIDANCE` | `calls=0` → `UNANSWERABLE` (조기 기권) | `calls=0` → `UNANSWERABLE` (조기 기권) | `calls=0` → `UNANSWERABLE` (미검색 기권) | `calls=0` → `128` (오답) |
 | ② 초안 `CONTENT_INSTRUCTION` 유지 + `P1_TOOL_GUIDANCE`만 강화 | `calls=0` → `UNANSWERABLE` (조기 기권) | `calls=0` → `UNANSWERABLE` (조기 기권) | `calls=0` → `UNANSWERABLE` (미검색 기권) | `calls=0` → `128` (오답) |
-| **③ 정제 `CONTENT_INSTRUCTION` (`Do not include explanations inside the final answer line`) + 강화 `P1_TOOL_GUIDANCE`** | **`calls=1` → `Aristotle` (정답)** | **`calls=1` → `1279` (검색 성공)** | **`calls=2` → `acquiring nutrients` (정상 검색 수행)** | **`64` (정답)** |
+| **③ 정제 `CONTENT_INSTRUCTION` (`Do not include explanations in the final answer`) + 강화 `P1_TOOL_GUIDANCE`** | **`calls=1` → `Aristotle` (정답)** | **`calls=1` → `1279` (검색 성공)** | **`calls=2` → `acquiring nutrients` (정상 검색 수행)** | **`64` (정답)** |
 
-- **결론:** `P1_TOOL_GUIDANCE`만 바꿔서는(조건 ②) 초안 `CONTENT_INSTRUCTION`의 `"Do not explain... from the available information"`이 도구 호출을 계속 가로막는다. 따라서 §6의 4가지 의미 조건을 그대로 유지하면서 `"Do not include explanations inside the final answer line"`으로 다듬은 조건 ③을 `src/baselines/prompts.py`와 `docs/INTERFACES.md` §6에 반영했다.
+- **결론:** `P1_TOOL_GUIDANCE`만 바꿔서는(조건 ②) 초안 `CONTENT_INSTRUCTION`의 `"Do not explain."`과 `"from the available information"` 조합이 도구 호출을 계속 가로막는다(초기 프롬프트에 지문이 주어지지 않는 P0·P1 1턴째에 모델이 `"available information"`을 '현재 프롬프트에 주어진 지문'으로 해석해 검색 없이 곧바로 `UNANSWERABLE`을 출력함). 반면 M의 근거 판정(`src/meba/judge.py`)은 시스템 프롬프트 상단에 `"You answer a question using only the evidence passages given to you. Do not use outside knowledge."`와 `ABSTAIN` 조건(`"the evidence does not contain the answer..."`)을 이미 명시하고 있다. 따라서 줄 형식(`Final answer:` 줄 vs JSON `answer` 필드)에 무관하게 P0·P1·M 근거 판정에 모두 호환되도록 `"Do not include explanations in the final answer."` 및 `"If the question cannot be answered, reply exactly: UNANSWERABLE"`로 다듬어 `src/baselines/prompts.py`와 `docs/INTERFACES.md` §6에 반영했다.
 
 ---
 
@@ -97,16 +97,16 @@ Colab(T4, `qwen2.5:7b-instruct-q4_K_M`, `temperature=0`)에서 초안 문구로 
 
 - 실행 명령: `python -B -m scripts.run_eval --bundle dev --round r1 --pipelines p1`
 
-| 유형 | 문항 수 | 정답 수 (정확도) | 평균 F1 | 평균 호출 수 | 평균 출력 토큰 | 평균 최대 입력 토큰 | 평균 시간(초) | 비고 |
-|---|---|---|---|---|---|---|---|---|
-| **전체** | 60 (워밍업 제외 59) | **24/60 (40.0%)** | 0.376 | 1.88 | 66.4 | 974.5 | 7.64s | 타임아웃 2건 포함, 최대 VRAM 5,065 MiB |
-| **HotpotQA** | 20 (비용 19) | **5/20 (25.0%)** | 0.290 | 2.00 | 73.2 | 1368.0 | 4.26s | 비압축 5문단 입력으로 문맥 토큰 부담 큼 |
-| **SQuAD 2.0** | 20 | **7/20 (35.0%)** | 0.462 | 1.65 | 47.2 | 1067.1 | 14.84s | `squad2-0045`, `squad2-0051` 120s 타임아웃 2건 |
-| **GSM8K** | 20 | **12/20 (60.0%)** | - | 2.00 | 79.0 | 508.1 | 3.66s | 계산기 도구 1회 호출 후 최종 답 (평균 2.00회 호출) |
+| 유형 | 문항 수 | 정답 수 (정확도) | 평균 텍스트 F1 (`answer_kind="text"`) | 답할 수 없음 정답률 (`unanswerable`) | 평균 호출 수 | 평균 출력 토큰 | 평균 최대 입력 토큰 | 평균 시간(초) | 비고 |
+|---|---|---|---|---|---|---|---|---|---|
+| **전체** | 60 (워밍업 제외 59) | **24/60 (40.0%)** | **0.368** (30문항) | **4/10 (40.0%)** | 1.88 | 66.4 | 974.5 | 7.64s | 타임아웃 2건 포함, 최대 VRAM 5,065 MiB |
+| **HotpotQA** | 20 (비용 19) | **5/20 (25.0%)** | **0.290** (20문항) | - | 2.00 | 73.2 | 1368.0 | 4.26s | 비압축 5문단 입력으로 문맥 토큰 부담 큼 |
+| **SQuAD 2.0** | 20 | **7/20 (35.0%)** | **0.524** (`answerable` 10문항, EM 3/10) | **4/10 (40.0%)** | 1.65 | 47.2 | 1067.1 | 14.84s | `squad2-0045`, `squad2-0051` 120s 타임아웃 2건 |
+| **GSM8K** | 20 | **12/20 (60.0%)** | - (`numeric`) | - | 2.00 | 79.0 | 508.1 | 3.66s | 계산기 도구 1회 호출 후 최종 답 (평균 2.00회 호출) |
 
 - **P1 개발 세트 로그 핵심 관찰 (D-3 인계 사항):**
-  1. **HotpotQA (25.0%):** 1차 검색 1회(`calls=2.00`)만 수행하고 멈추는 경우가 많아 다중 홉 2번째 근거 문단을 놓치며, 압축 없이 5개 문단 전체를 넣으므로 최대 입력 토큰이 평균 `1,368`토큰에 달한다.
-  2. **SQuAD 2.0 (35.0%):** 출력 토큰 하드 상한(`num_predict`)과 루프 제어기가 없는 표준 P1에서 **`squad2-0045`, `squad2-0051` 2문항이 120초 타임아웃**에 걸려 평균 시간을 3.5초대에서 14.84초로 끌어올렸다. 또한 함정 문단이 검색되면 `UNANSWERABLE` 기권 대신 오답을 내는 경향이 뚜렷하다.
+  1. **HotpotQA (25.0%, 텍스트 F1 0.290):** 1차 검색 1회(`calls=2.00`)만 수행하고 멈추는 경우가 많아 다중 홉 2번째 근거 문단을 놓치며, 압축 없이 5개 문단 전체를 넣으므로 최대 입력 토큰이 평균 `1,368`토큰에 달한다.
+  2. **SQuAD 2.0 (전체 35.0% — `answerable` 3/10 [30.0%, 텍스트 F1 0.524], `unanswerable` 4/10 [40.0%]):** 출력 토큰 하드 상한(`num_predict`)과 루프 제어기가 없는 표준 P1에서 **`squad2-0045`, `squad2-0051` 2문항이 120초 타임아웃**에 걸려 평균 시간을 3.5초대에서 14.84초로 끌어올렸다. 또한 답할 수 없음 문항 10개 중 6개에서 함정 문단에 속아 오답을 내어 기권 정확도가 `4/10 (40.0%)`에 머물렀다.
   3. **GSM8K (60.0%):** `calculator` 도구를 호출하느라 모든 문항에서 기본 2회 호출(`calls=2.00`)을 소모한다.
 
 ## 결정

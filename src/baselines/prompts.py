@@ -11,7 +11,7 @@ from __future__ import annotations
 # Part 1: Content instruction shared across P0, P1, and M evidence judgment.
 CONTENT_INSTRUCTION: str = (
     "Give a short final answer only: a few words, a name, a date, or a number.\n"
-    "Do not include explanations inside the final answer line. If the answer is a number, write only the number.\n"
+    "Do not include explanations in the final answer. If the answer is a number, write only the number.\n"
     "If the question cannot be answered, reply exactly: UNANSWERABLE"
 )
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -36,6 +37,48 @@ RECOMMENDED_M_BY_K: dict[int, int] = {
 }
 
 
+@dataclass(frozen=True)
+class RetrievalMetrics:
+    """후보 `k` 하나에 대한 개발 세트 검색 재현율 및 문맥 길이 집계 결과."""
+
+    k: int
+    m: int | None
+    n_items: int
+    any_hits: int
+    any_rate: float
+    all_hits: int
+    all_rate: float
+    found_gold_docs: int
+    total_gold_docs: int
+    doc_recall: float
+    squad_hits: int
+    squad_total: int
+    squad_rate: float
+    hp_any_hits: int
+    hp_all_hits: int
+    hp_total: int
+    hp_any_rate: float
+    hp_all_rate: float
+    hp_bridge_all: int
+    hp_bridge_total: int
+    hp_comp_all: int
+    hp_comp_total: int
+    p1_obs_chars: float
+    m_full_chars: float
+    m_comp_chars: float | None
+    hp_e2e_sent_kept: int
+    hp_e2e_sent_total: int
+    hp_e2e_sent_rate: float | None
+
+    def __getitem__(self, key: str) -> Any:
+        """딕셔너리 키 조회 호환성을 위한 접근자."""
+        return getattr(self, key)
+
+    def to_dict(self) -> dict[str, Any]:
+        """집계 결과를 일반 딕셔너리로 변환한다."""
+        return asdict(self)
+
+
 def load_search_items(path: Path) -> list[dict[str, Any]]:
     """개발 세트에서 검색 대상 문항(`gold_doc_ids`가 비어 있지 않은 문항)만 읽는다.
 
@@ -57,7 +100,7 @@ def evaluate_k(
     k: int,
     m: int | None = None,
     window: int = 1,
-) -> dict[str, Any]:
+) -> RetrievalMetrics:
     """주어진 `k`에서 개발 세트 검색 재현율과 문맥 길이를 계산한다.
 
     Args:
@@ -68,7 +111,7 @@ def evaluate_k(
         window: 문장 창 반경 (`compress.window`).
 
     Returns:
-        재현율·문단 회수율·평균 글자 수를 담은 딕셔너리.
+        재현율·문단 회수율·평균 글자 수를 담은 `RetrievalMetrics`.
     """
     if not items:
         raise ValueError("items must not be empty")
@@ -149,40 +192,40 @@ def evaluate_k(
                     hp_comp_all += 1
 
     n_items = len(items)
-    return {
-        "k": k,
-        "m": effective_m,
-        "n_items": n_items,
-        "any_hits": any_hits,
-        "any_rate": any_hits / n_items,
-        "all_hits": all_hits,
-        "all_rate": all_hits / n_items,
-        "found_gold_docs": found_gold_docs,
-        "total_gold_docs": total_gold_docs,
-        "doc_recall": found_gold_docs / total_gold_docs if total_gold_docs else 0.0,
-        "squad_hits": squad_hits,
-        "squad_total": squad_total,
-        "squad_rate": squad_hits / squad_total if squad_total else 0.0,
-        "hp_any_hits": hp_any_hits,
-        "hp_all_hits": hp_all_hits,
-        "hp_total": hp_total,
-        "hp_any_rate": hp_any_hits / hp_total if hp_total else 0.0,
-        "hp_all_rate": hp_all_hits / hp_total if hp_total else 0.0,
-        "hp_bridge_all": hp_bridge_all,
-        "hp_bridge_total": hp_bridge_total,
-        "hp_comp_all": hp_comp_all,
-        "hp_comp_total": hp_comp_total,
-        "p1_obs_chars": p1_obs_chars / n_items,
-        "m_full_chars": m_full_chars / n_items,
-        "m_comp_chars": (m_comp_chars / n_items) if effective_m is not None else None,
-        "hp_e2e_sent_kept": hp_gold_sents_kept,
-        "hp_e2e_sent_total": hp_gold_sents_total,
-        "hp_e2e_sent_rate": (
+    return RetrievalMetrics(
+        k=k,
+        m=effective_m,
+        n_items=n_items,
+        any_hits=any_hits,
+        any_rate=any_hits / n_items,
+        all_hits=all_hits,
+        all_rate=all_hits / n_items,
+        found_gold_docs=found_gold_docs,
+        total_gold_docs=total_gold_docs,
+        doc_recall=found_gold_docs / total_gold_docs if total_gold_docs else 0.0,
+        squad_hits=squad_hits,
+        squad_total=squad_total,
+        squad_rate=squad_hits / squad_total if squad_total else 0.0,
+        hp_any_hits=hp_any_hits,
+        hp_all_hits=hp_all_hits,
+        hp_total=hp_total,
+        hp_any_rate=hp_any_hits / hp_total if hp_total else 0.0,
+        hp_all_rate=hp_all_hits / hp_total if hp_total else 0.0,
+        hp_bridge_all=hp_bridge_all,
+        hp_bridge_total=hp_bridge_total,
+        hp_comp_all=hp_comp_all,
+        hp_comp_total=hp_comp_total,
+        p1_obs_chars=p1_obs_chars / n_items,
+        m_full_chars=m_full_chars / n_items,
+        m_comp_chars=(m_comp_chars / n_items) if effective_m is not None else None,
+        hp_e2e_sent_kept=hp_gold_sents_kept,
+        hp_e2e_sent_total=hp_gold_sents_total,
+        hp_e2e_sent_rate=(
             hp_gold_sents_kept / hp_gold_sents_total
             if (effective_m is not None and hp_gold_sents_total)
             else None
         ),
-    }
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
