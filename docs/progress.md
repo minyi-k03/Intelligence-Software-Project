@@ -1,7 +1,7 @@
 # 진행 현황 (progress)
 
 > **기준 문서:** [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — 작업 단위·기한·선행 조건은 이 문서를 따른다. 여기서는 상태만 기록한다.
-> **마지막 갱신:** 2026-11-20 (`main` @ `4e26682`). A가 `main` 머지 이력(PR #1~#14)과 열린 PR(#13, #15)을 기준으로 전체 상태 열을 맞췄다. 근거·비고는 각 담당이 PR에서 보완한다.
+> **전체 상태 기준:** 2026-11-20 (`main` @ `4e26682`). A가 `main` 머지 이력(PR #1~#14)과 열린 PR(#13, #15)을 기준으로 전체 상태 열을 맞췄다. 11/23에 D-3 분석과 그 선행 로그 상태를 갱신했다.
 
 ## 갱신 규칙
 
@@ -15,7 +15,7 @@
 | 구간 | 기간 | 상태 |
 |---|---|---|
 | 1주차 | 11/11 ~ 11/17 | 완료. 동결·설정·토크나이저·BM25·계산기·압축·예산·루프 끊기·채점기 머지 |
-| 2주차 | 11/18 ~ 11/24 | 진행 중. A-3(PR #14)·B-3(PR #13) 머지. A-4 완료(`YongMin`, PR 대기). D-2(PR #15) 리뷰 대기. B-4·C-3 미착수 |
+| 2주차 | 11/18 ~ 11/24 | 11/20 기준 A-3(PR #14)·B-3(PR #13) 머지, A-4 완료(`YongMin`, PR 대기), D-2(PR #15) 리뷰 대기, B-4·C-3 미착수. 11/23 갱신: B-4 개발 로그 제출(`fde8dc7`), D-3에서 관측 가능한 지표 집계 |
 | 3주차 | 11/25 ~ 11/27 | 미착수 |
 | 측정 | 11/28 ~ 12/03 | 미착수 |
 | 마무리 | 12/04 | 미착수 |
@@ -27,6 +27,7 @@
 | 항목 | 기한 | 막고 있는 작업 | 담당 |
 |---|---|---|---|
 | TBD #6 라운드 간 결과가 다를 때 대표값 규칙 | 11/16 (지남) | PR D-2 | D (PR #15에서 "3라운드 다수결" 제안, 머지 대기) |
+| B-4 실행의 최종 응답 원문·도구 요청 이력 | 11/23 | D-3 형식 오류율·반복 루프 비율 산출. P1 개발 로그의 토큰 집계는 완료 | B·D (같은 실행의 추가 기록 확인 필요) |
 
 TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6과 [EVALUATION.md](EVALUATION.md) §3에 반영됐다.
 
@@ -68,7 +69,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR B-2a 공용 토크나이저 | 11/13 | ✅ | `src/tools/tokenizer.py`, `tests/test_tools.py` (PR #5) |
 | PR B-2b BM25 검색·계산기 | 11/16 | ✅ | `src/tools/{bm25_search,calculator,__init__}.py`, `tests/test_tools.py` (PR #9) |
 | PR B-3 P0·P0-raw·P1 | 11/18 | ✅ | `src/baselines/{prompts,p0,p1_react,__init__}.py`, `tests/test_baselines.py` (PR #13) |
-| 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ✅ | [기록](experiments/2026-11-21-b-retrieval-k.md), `scripts/measure_retrieval_k.py`, `configs/default.yaml` (`k=5, m=7`), `results/runs/dev/r1/p1.jsonl` |
+| 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ✅ | [기록](experiments/2026-11-21-b-retrieval-k.md), `scripts/measure_retrieval_k.py`, `configs/default.yaml` (`k=5, m=7`), `results/runs/dev/r1/p1.jsonl` (`3acd6fb`) |
 | PR B-5 Colab 노트북 (A에서 이관 제안) | 11/26 | ⬜ | 이관은 팀 확인 필요 |
 
 ### C · 조환호
@@ -78,7 +79,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR C-1 문장 창 압축 | 11/17 | ✅ | `src/meba/compress.py`, `tests/test_compress.py` (PR #4) |
 | 실험 C-2 `k`×`m` 측정 | 11/19 | ✅ | [기록](experiments/2026-11-15-c-compress-m.md), `scripts/measure_compress_m.py`. 권장 m: k=3 → 6, k=5 → 7, k=8 → 10 |
 | PR C-3 근거 판정·재검색 | 11/23 | ✅ | `src/meba/judge.py`, `src/meba/requery.py`, `tests/test_judge.py`, `tests/test_requery.py`. 가짜 모델로 검증, 실제 Ollama 확인은 통합(A-5b)·C-4에서 |
-| 실험 C-4 JSON vs 태그 | 11/25 | ⬜ | |
+| 실험 C-4 JSON vs 태그 | 11/25 | ✅ | [기록](experiments/2026-11-23-c-judge-format.md), `scripts/compare_judge_format.py`. JSON 유지 (잘림·파싱 실패 모두 0%, 정확도 30% 동일). 근거 판정 과잉 기권이 커서 프롬프트 후속 작업 필요 |
 | PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | |
 
 ### D · 심동섭
@@ -87,7 +88,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 |---|---|---|---|
 | PR D-1 출력 상한·예산·루프 끊기 | 11/17 | ✅ | `src/meba/{budget,loop_breaker}.py`, `tests/test_budget.py`·`tests/test_loop_breaker.py` (PR #10) |
 | PR D-2 결과표·McNemar | 11/20 | 🔄 | PR #15 리뷰 대기 (`Dongsub`). `src/eval/{tables,stats}.py`, `scripts/build_tables.py` |
-| 분석 D-3 P1 로그 분석 | 11/23 | 🔄 | PR #15에 집계 기준 초안. 실측은 B-4 로그 대기 |
+| 분석 D-3 P1 로그 분석 | 11/23 | 🔄 | [B-4 개발 로그 60문항 분석](experiments/2026-11-23-d-p1-log-audit.md). 기록 출력 비중 4.782%. 형식 오류율·반복 루프 비율은 원문·도구 인자 미기록으로 산출 불가 |
 | 실험 D-4 `cap.judge` 민감도 | 11/27 | ⬜ | 선행 A-5b |
 | PR D-5 조건부 `concise` | 11/27 | ⬜ | |
 
