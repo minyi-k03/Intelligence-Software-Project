@@ -10,10 +10,9 @@ from __future__ import annotations
 
 # Part 1: Content instruction shared across P0, P1, and M evidence judgment.
 CONTENT_INSTRUCTION: str = (
-    "Answer with a short answer only: a few words, a name, a date, or a number.\n"
-    "Do not explain. If the answer is a number, write only the number.\n"
-    "If the question cannot be answered from the available information,\n"
-    "reply exactly: UNANSWERABLE"
+    "Give a short final answer only: a few words, a name, a date, or a number.\n"
+    "Do not include explanations in the final answer. If the answer is a number, write only the number.\n"
+    "If the question cannot be answered, reply exactly: UNANSWERABLE"
 )
 
 # Part 2: Output-line tag appended only to free-text calls (P0, P1, M math finalize).
@@ -25,9 +24,10 @@ FORMAT_LINE: str = (
 SHARED_ANSWER_INSTRUCTION: str = f"{CONTENT_INSTRUCTION}\n\n{FORMAT_LINE}"
 
 P1_TOOL_GUIDANCE: str = (
-    "Answer the user's question accurately. You may use the available tools "
-    "(bm25_search and calculator) when helpful to find supporting facts or "
-    "perform arithmetic calculations before giving your final answer."
+    "You have two tools: bm25_search and calculator.\n"
+    "- For factual or entity questions, you MUST call bm25_search first to retrieve evidence before answering. "
+    "Never output UNANSWERABLE before checking bm25_search.\n"
+    "- For arithmetic or word problems, solve step by step and use calculator to verify numbers."
 )
 
 

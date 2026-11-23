@@ -68,8 +68,8 @@
 | `cap.finalize` | 128 | SPEC §7 |
 | `cap.judge` | 256 | SPEC §7 |
 | `cap.retry_multiplier` | 2 | SPEC §7 |
-| `retrieval.k` | TBD (1주차 B 측정) | SPEC §7 |
-| `compress.m` | TBD (1주차 C 측정) | SPEC §7 |
+| `retrieval.k` | 5 (실험 B-4 확정) | SPEC §7 |
+| `compress.m` | 7 (실험 C-2 · B-4 확정) | SPEC §7 |
 | `compress.window` | 1 (앞뒤 1문장) | SPEC §5 |
 | `p1.max_steps` | 7 | SPEC §3 |
 | `run.timeout_s` | 120 | EVALUATION §4 |
@@ -156,10 +156,9 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 **① 내용 문장** — P0 · P1 · M 근거 판정이 같은 상수를 그대로 씁니다.
 
 ```text
-Answer with a short answer only: a few words, a name, a date, or a number.
-Do not explain. If the answer is a number, write only the number.
-If the question cannot be answered from the available information,
-reply exactly: UNANSWERABLE
+Give a short final answer only: a few words, a name, a date, or a number.
+Do not include explanations in the final answer. If the answer is a number, write only the number.
+If the question cannot be answered, reply exactly: UNANSWERABLE
 ```
 
 **② 형식 줄** — 자유 서술로 답하는 호출(P0 · P1 · M 수학 경로)에만 붙입니다.

@@ -7,5 +7,5 @@
 ## 값을 바꿀 때
 
 - 설계안에서 온 값(상한 512/128/256, 예산 4, 재검색 2, P1 7스텝, 타임아웃 120초)을 바꾸려면 개발 세트 실험 기록(`docs/experiments/`)을 PR에 링크합니다.
-- `retrieval.k`, `compress.m`은 1주차 측정 후 채웁니다.
+- `retrieval.k = 5`, `compress.m = 7`은 개발 세트 측정으로 확정했습니다([실험 B-4](../docs/experiments/2026-11-21-b-retrieval-k.md), [실험 C-2](../docs/experiments/2026-11-15-c-compress-m.md)).
 - 측정에 쓴 설정 전체는 러너가 `RUN_META.json`에 스냅샷으로 남기므로, 측정 뒤에 설정을 바꿔도 결과를 재현할 수 있습니다.

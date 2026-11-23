@@ -18,10 +18,10 @@ cap:
   retry_multiplier: 2               # Output cap multiplier on truncation retry (1 attempt)
 
 retrieval:
-  k: 3                              # Initial paragraph retrieval count (to be confirmed in Week 1)
+  k: 5                              # Paragraph retrieval count (confirmed in Experiment B-4)
 
 compress:
-  m: 3                              # Sentence window retention count (to be confirmed in Week 1)
+  m: 7                              # Sentence window retention count (confirmed in Experiment C-2/B-4)
   window: 1                         # Context window size around target sentence (+/- 1 sentence)
 
 p1:
