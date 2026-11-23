@@ -9,24 +9,25 @@
 검색 → 압축 → 근거 판정 → (RETRIEVE면) 후속 검색어로 재검색 → 압축 → 근거 판정 …
 검색형 문항만 쓰므로 라우터는 부르지 않는다. 문항 유형은 문항 고르기와 집계에만 쓰고
 모델 호출에는 넘기지 않는다.
+
+측정 규칙은 본 측정 러너와 같다 (EVALUATION §4, INTERFACES §7): 문항은 `run_item`으로 돌려
+`run.timeout_s`를 넘기면 오답으로 남기고, 형식마다 첫 문항은 워밍업으로 시간·비용 집계에서 뺀다.
+이어 돌 때 설정·데이터·형식 목록이 처음과 다르면 `RunMeta`가 멈춘다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
-import time
-from dataclasses import asdict
 from pathlib import Path
 from statistics import mean
 from typing import Any, Callable, Iterable, Sequence
 
+from src.common.types import PipelineResult
 from src.config.llm import create_chat_ollama
 from src.config.settings import REPO_ROOT, Settings, get_settings
-from src.eval.logger import RunLog, verify_frozen_hashes
-from src.eval.runner import load_items
-from src.eval.scorer import score_item
+from src.eval.logger import RunLog, RunMeta, collect_environment, verify_frozen_hashes
+from src.eval.runner import load_items, run_item
 from src.eval.stats import mcnemar_exact
 from src.meba.budget import BudgetedLLM
 from src.meba.compress import compress
@@ -59,62 +60,65 @@ def search_items(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [it for it in items if it["answer_kind"] in ("text", "unanswerable")]
 
 
-def run_search_path(
-    item: dict[str, Any],
-    *,
+def make_pipeline(
     output_format: OutputFormat,
+    *,
     settings: Settings,
     index: BM25Index,
     llm_factory: Callable[..., Any] = create_chat_ollama,
-) -> dict[str, Any]:
-    """한 문항을 검색 경로로 끝까지 돌리고 로그 한 줄을 만든다.
+    followups: dict[str, list[str]] | None = None,
+) -> Callable[[str, str], PipelineResult]:
+    """검색 경로를 `(qid, question) -> PipelineResult` 파이프라인으로 만든다.
 
     재검색 때는 지금까지 모은 근거에 새 근거를 이어 붙여 판정에 넘긴다.
     루프 끊기에 걸리거나 후속 검색어를 못 만들면, 지금 근거로 RETRIEVE 없는 판정을 받는다.
 
     Args:
-        item: 동결 문항 한 줄 (`question`만 모델 쪽으로 간다)
         output_format: 근거 판정 출력 형식
         settings: 설정 (`retrieval.k`, `compress.*`, `budget.*`, `cap.*`)
         index: 코퍼스 BM25 색인
         llm_factory: ChatOllama 생성 함수 (테스트에서 가짜 모델 주입)
+        followups: 넘기면 문항별 후속 검색어를 `qid` 키로 채운다 (로그용)
 
     Returns:
-        답·판정·호출 기록·채점 결과를 담은 로그 한 줄
+        러너의 `run_item`에 넘길 파이프라인
     """
-    question = item["question"]
-    llm = BudgetedLLM(settings=settings, llm_factory=llm_factory)
-    requery = Requery(settings.budget.max_requery)
-    breaker = LoopBreaker(normalizer=search_args_key)
-    retrieved: list[list[str]] = []
-    kept: list[list[str]] = []
-    contexts: list[str] = []
-    decisions: list[str] = []
 
-    def add_evidence(query: str, followup: str | None) -> bool:
-        """검색·압축해 근거를 더한다. 루프 끊기에 걸렸으면 False."""
-        outcome = breaker.run("bm25_search", {"query": query}, lambda: bm25_search(query, settings.retrieval.k, index=index))
-        if outcome.answer_directly:
-            return False
-        paragraphs = outcome.result if isinstance(outcome.result, list) else []
-        packed = compress(
-            question,
-            paragraphs,
-            m=settings.compress.m,
-            window=settings.compress.window,
-            tokenizer=tokenize,
-            followup_query=followup,
-        )
-        retrieved.append([p["doc_id"] for p in paragraphs])
-        kept.append(packed.kept_windows)
-        if packed.context:
-            contexts.append(packed.context)
-        return True
+    def pipeline(qid: str, question: str) -> PipelineResult:
+        """한 문항을 검색 경로로 끝까지 돌린다. 모델 오류는 러너가 오답 한 줄로 남긴다."""
+        llm = BudgetedLLM(settings=settings, llm_factory=llm_factory)
+        requery = Requery(settings.budget.max_requery)
+        breaker = LoopBreaker(normalizer=search_args_key)
+        retrieved: list[list[str]] = []
+        kept: list[list[str]] = []
+        contexts: list[str] = []
+        decisions: list[str] = []
+        if followups is not None:
+            followups[qid] = requery.queries
 
-    start = time.perf_counter()
-    final = None
-    error = None
-    try:
+        def add_evidence(query: str, followup: str | None) -> bool:
+            """검색·압축해 근거를 더한다. 루프 끊기에 걸렸으면 False."""
+            outcome = breaker.run(
+                "bm25_search", {"query": query}, lambda: bm25_search(query, settings.retrieval.k, index=index)
+            )
+            if outcome.answer_directly:
+                return False
+            paragraphs = outcome.result if isinstance(outcome.result, list) else []
+            packed = compress(
+                question,
+                paragraphs,
+                m=settings.compress.m,
+                window=settings.compress.window,
+                tokenizer=tokenize,
+                followup_query=followup,
+            )
+            retrieved.append([p["doc_id"] for p in paragraphs])
+            kept.append(packed.kept_windows)
+            if packed.context:
+                contexts.append(packed.context)
+            return True
+
+        final = None
         add_evidence(question, None)
         allow_retrieve = requery.allow_retrieve
         while True:
@@ -130,32 +134,62 @@ def run_search_path(
                 allow_retrieve = requery.allow_retrieve
             else:
                 allow_retrieve = False
-    except Exception as exc:  # 모델 오류는 멈추지 않고 오답 한 줄로 남긴다 (러너와 같은 처리)
-        error = f"{type(exc).__name__}: {exc}"
 
-    answer = final.answer if final else ""
-    calls = [asdict(c) for c in llm.calls]
-    return {
-        "qid": item["qid"],
-        "type": item["type"],
-        "subtype": item["subtype"],
-        "answer_kind": item["answer_kind"],
-        "format": output_format,
-        "answer": answer,
-        "abstained": bool(final and final.abstained),
-        "decisions": decisions,
-        "followups": list(requery.queries),
-        "budget_exhausted": llm.budget_exhausted,
-        "error": error,
-        "n_calls": llm.n_calls,
-        "n_retries": llm.n_retries,
-        "calls": calls,
-        "loop_breaks": breaker.loop_breaks,
-        "retrieved_doc_ids": retrieved,
-        "kept_windows": kept,
-        "latency_s": round(time.perf_counter() - start, 4),
-        **score_item(item, answer),
-    }
+        return PipelineResult(
+            answer=final.answer if final else "",
+            abstained=bool(final and final.abstained),
+            budget_exhausted=llm.budget_exhausted,
+            route="search",
+            decisions=decisions,
+            n_calls=llm.n_calls,
+            n_retries=llm.n_retries,
+            calls=list(llm.calls),
+            retrieved_doc_ids=retrieved,
+            kept_windows=kept,
+            loop_breaks=breaker.loop_breaks,
+        )
+
+    return pipeline
+
+
+def run_search_path(
+    item: dict[str, Any],
+    *,
+    output_format: OutputFormat,
+    settings: Settings,
+    index: BM25Index,
+    llm_factory: Callable[..., Any] = create_chat_ollama,
+    order_idx: int = 0,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    """한 문항을 본 측정과 같은 규칙(`run_item`)으로 돌리고 로그 한 줄을 만든다.
+
+    Args:
+        item: 동결 문항 한 줄 (`qid`, `question`만 파이프라인으로 간다)
+        output_format: 근거 판정 출력 형식
+        settings: 설정
+        index: 코퍼스 BM25 색인
+        llm_factory: ChatOllama 생성 함수
+        order_idx: 이 형식 안에서의 문항 순번. 0이면 워밍업
+        timeout_s: 문항 제한 시간. 없으면 `run.timeout_s`
+
+    Returns:
+        러너 로그 형식(INTERFACES §7.2) + `format`, `followups`
+    """
+    followups: dict[str, list[str]] = {}
+    pipeline = make_pipeline(output_format, settings=settings, index=index, llm_factory=llm_factory, followups=followups)
+    row = run_item(
+        item,
+        pipeline,
+        pipeline_name=output_format,
+        bundle="dev",
+        round_name="c4",
+        order_idx=order_idx,
+        timeout_s=settings.run.timeout_s if timeout_s is None else timeout_s,
+        window=settings.compress.window,
+        is_warmup=order_idx == 0,
+    )
+    return {**row, "format": output_format, "followups": list(followups.get(item["qid"], []))}
 
 
 def _rate(values: Sequence[bool]) -> float | None:
@@ -163,15 +197,26 @@ def _rate(values: Sequence[bool]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def summarize_rows(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def _is_warmup(row: dict[str, Any], position: int) -> bool:
+    """워밍업 문항인가. `is_warmup`이 없는 예전 로그는 파일의 첫 줄을 워밍업으로 본다."""
+    return row["is_warmup"] if "is_warmup" in row else position == 0
+
+
+def summarize_rows(rows: Sequence[dict[str, Any]], warmup_qids: Iterable[str] = ()) -> dict[str, Any]:
     """한 형식·한 그룹의 지표를 계산한다.
+
+    정확도·F1·부작용 지표(잘림·파싱 실패·기권)는 워밍업 문항을 포함하고,
+    판정 호출 수·출력 토큰은 워밍업을 빼고 평균을 낸다 (INTERFACES §7.4).
 
     Args:
         rows: 같은 형식의 문항 로그
+        warmup_qids: 이 형식의 워밍업 문항 ID
 
     Returns:
         정확도, 텍스트 F1, 과잉 기권률, 호출 단위 잘림률·파싱 실패율 등
     """
+    warm = set(warmup_qids)
+    cost = [r for r in rows if r["qid"] not in warm]
     calls = [c for r in rows for c in r["calls"]]
     checked = [c for c in calls if c["parse_ok"] is not None]
     answerable = [r for r in rows if r["answer_kind"] == "text"]
@@ -180,14 +225,15 @@ def summarize_rows(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "accuracy": _rate([r["correct"] for r in rows]),
         "text_f1": mean(r["f1"] for r in answerable) if answerable else None,
         "over_abstention": _rate([r["abstained"] for r in answerable]),
-        "judge_calls": mean(r["n_calls"] for r in rows) if rows else None,
+        "judge_calls": mean(r["n_calls"] for r in cost) if cost else None,
         "retries": sum(r["n_retries"] for r in rows),
         "truncated_rate": _rate([c["truncated"] for c in calls]),
         "truncated_after_retry": sum(c["truncated"] and c["is_retry"] for c in calls),
         "parse_fail_rate": _rate([not c["parse_ok"] for c in checked]),
-        "output_tokens": mean(sum(c["output_tokens"] for c in r["calls"]) for r in rows) if rows else None,
+        "output_tokens": mean(sum(c["output_tokens"] for c in r["calls"]) for r in cost) if cost else None,
         "first_decision": {d: sum(1 for r in rows if r["decisions"][:1] == [d]) for d in ("ANSWER", "RETRIEVE", "ABSTAIN")},
         "budget_exhausted": sum(r["budget_exhausted"] for r in rows),
+        "timeouts": sum(bool(r.get("timeout")) for r in rows),
         "errors": sum(r["error"] is not None for r in rows),
     }
 
@@ -205,23 +251,26 @@ def render_summary(logs: dict[str, list[dict[str, Any]]]) -> str:
     """형식별 로그로 마크다운 표를 만든다.
 
     Args:
-        logs: 형식 이름 → 문항 로그
+        logs: 형식 이름 → 문항 로그 (실행 순서대로)
 
     Returns:
         그룹별 지표 표, 첫 판정 분포, 두 형식의 문항 대응 비교(McNemar)
     """
+    warmups = {fmt: {r["qid"] for i, r in enumerate(rows) if _is_warmup(r, i)} for fmt, rows in logs.items()}
     lines = [
-        "| 그룹 | 형식 | 문항 | 정확도 | 텍스트 F1 | 과잉 기권률 | 판정 호출/문항 | 잘림률(호출) | 재시도 후 잘림 | 파싱 실패율 | 출력 토큰/문항 | 예산 소진 | 오류 |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "판정 호출/문항과 출력 토큰/문항은 형식마다 첫 문항(워밍업)을 뺀 평균이다. 나머지 지표는 모든 문항이다.",
+        "",
+        "| 그룹 | 형식 | 문항 | 정확도 | 텍스트 F1 | 과잉 기권률 | 판정 호출/문항 | 잘림률(호출) | 재시도 후 잘림 | 파싱 실패율 | 출력 토큰/문항 | 예산 소진 | 시간 초과 | 오류 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for group, keep in GROUPS:
         for fmt, rows in logs.items():
-            s = summarize_rows([r for r in rows if keep(r)])
+            s = summarize_rows([r for r in rows if keep(r)], warmups[fmt])
             lines.append(
                 f"| {group} | {fmt} | {s['n']} | {_fmt(s['accuracy'], True)} | {_fmt(s['text_f1'])} | "
                 f"{_fmt(s['over_abstention'], True)} | {_fmt(s['judge_calls'])} | {_fmt(s['truncated_rate'], True)} | "
                 f"{s['truncated_after_retry']} | {_fmt(s['parse_fail_rate'], True)} | {_fmt(s['output_tokens'])} | "
-                f"{s['budget_exhausted']} | {s['errors']} |"
+                f"{s['budget_exhausted']} | {s['timeouts']} | {s['errors']} |"
             )
     lines += ["", "첫 판정 분포 (전체)", "", "| 형식 | ANSWER | RETRIEVE | ABSTAIN |", "|---|---|---|---|"]
     for fmt, rows in logs.items():
@@ -250,14 +299,6 @@ def read_log(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def _git_commit() -> str | None:
-    """레포의 현재 커밋. git이 없으면 None."""
-    try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
 def main() -> None:
     """두 형식을 개발 세트 검색형 문항에 돌리고(이어 돌기 지원) 요약 표를 쓴다."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -273,19 +314,31 @@ def main() -> None:
         settings = get_settings()
         items = search_items(load_items(REPO_ROOT / DEV_PATH))[: args.limit]
         index = get_default_index()
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "meta.json").write_text(
-            json.dumps({"git_commit": _git_commit(), "data_hashes": hashes, "settings": settings.to_dict(), "n_items": len(items)}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        meta = RunMeta(out_dir / "RUN_META.json")
+        if not meta.path.exists() and any((out_dir / f"{fmt}.jsonl").exists() for fmt in args.formats):
+            raise SystemExit(f"{out_dir}에 로그는 있는데 RUN_META.json이 없어 실행 조건을 확인할 수 없다. 새 --out-dir로 돌린다.")
+        meta.begin(
+            bundle="dev",
+            round_name="c4",
+            item_set="dev" if args.limit is None else f"dev[:{args.limit}]",
+            settings=settings.to_dict(),
+            data_hashes=hashes,
+            order=list(args.formats),
+            environment=collect_environment(),
         )
         for fmt in args.formats:
             log = RunLog(out_dir / f"{fmt}.jsonl")
-            todo = [it for it in items if it["qid"] not in log.done_qids]
+            todo = [(i, it) for i, it in enumerate(items) if it["qid"] not in log.done_qids]
             print(f"[{fmt}] {len(items)}문항 중 {len(items) - len(todo)}개 완료, {len(todo)}개 실행", flush=True)
-            for n, item in enumerate(todo, 1):
-                row = run_search_path(item, output_format=fmt, settings=settings, index=index)
+            for n, (order_idx, item) in enumerate(todo, 1):
+                row = run_search_path(item, output_format=fmt, settings=settings, index=index, order_idx=order_idx)
                 log.append(row)
-                print(f"  [{fmt}] {n}/{len(todo)} {row['qid']} {'+'.join(row['decisions']) or '-'} -> {row['answer']!r} correct={row['correct']}", flush=True)
+                print(
+                    f"  [{fmt}] {n}/{len(todo)} {row['qid']} {'+'.join(row['decisions']) or '-'} "
+                    f"-> {row['answer']!r} correct={row['correct']}",
+                    flush=True,
+                )
+        meta.finish(vram_by_pipeline={})
 
     logs = {fmt: read_log(out_dir / f"{fmt}.jsonl") for fmt in args.formats}
     table = render_summary(logs)
