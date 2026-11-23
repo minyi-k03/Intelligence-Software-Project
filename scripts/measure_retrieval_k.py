@@ -70,10 +70,6 @@ class RetrievalMetrics:
     hp_e2e_sent_total: int
     hp_e2e_sent_rate: float | None
 
-    def __getitem__(self, key: str) -> Any:
-        """딕셔너리 키 조회 호환성을 위한 접근자."""
-        return getattr(self, key)
-
     def to_dict(self) -> dict[str, Any]:
         """집계 결과를 일반 딕셔너리로 변환한다."""
         return asdict(self)
@@ -229,7 +225,14 @@ def evaluate_k(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """CLI 진입점."""
+    """개발 세트 BM25 검색 재현율과 압축 문맥 길이를 표로 출력한다.
+
+    Args:
+        argv: CLI 인자 리스트 (`--k 3 5 8 10` 등). `None`이면 `sys.argv[1:]`를 읽는다.
+
+    Returns:
+        없음. 표준 출력으로 Markdown 집계 표 2개를 출력한다.
+    """
     parser = argparse.ArgumentParser(description="개발 세트 BM25 검색 재현율(retrieval.k)을 측정한다.")
     parser.add_argument("--k", type=int, nargs="+", default=[3, 5, 8, 10])
     args = parser.parse_args(argv)
@@ -241,42 +244,61 @@ def main(argv: Sequence[str] | None = None) -> None:
     items = load_search_items(REPO_ROOT / DEV_PATH)
 
     rows = [evaluate_k(index, items, k=k, window=window) for k in args.k]
+    if not rows:
+        return
 
-    print(f"개발 세트 검색 문항 {len(items)}개 (HotpotQA 20 + SQuAD 2.0 20), 코퍼스 {n_docs}문단\n")
+    first = rows[0]
+    sent_total = next((r.hp_e2e_sent_total for r in rows if r.hp_e2e_sent_total > 0), 0)
+    sent_hdr = f" ({sent_total})" if sent_total else ""
+
+    print(
+        f"개발 세트 검색 문항 {first.n_items}개 "
+        f"(HotpotQA {first.hp_total} + SQuAD 2.0 {first.squad_total}), 코퍼스 {n_docs}문단\n"
+    )
     print("### 1. 후보 k별 1차 검색 재현율\n")
     print(
-        "| k | 전체 any_gold (40) | 전체 all_gold (40) | 정답 문단 회수율 (60) "
-        "| SQuAD 2.0 (20) | HotpotQA 1개+ (20) | HotpotQA 2개 모두 (20) | bridge 2개 (10) | comparison 2개 (10) |"
+        f"| k | 전체 any_gold ({first.n_items}) | 전체 all_gold ({first.n_items}) "
+        f"| 정답 문단 회수율 ({first.total_gold_docs}) "
+        f"| SQuAD 2.0 ({first.squad_total}) | HotpotQA 1개+ ({first.hp_total}) "
+        f"| HotpotQA 2개 모두 ({first.hp_total}) | bridge 2개 ({first.hp_bridge_total}) "
+        f"| comparison 2개 ({first.hp_comp_total}) |"
     )
     print("|---|---|---|---|---|---|---|---|---|")
     for r in rows:
         print(
-            f"| {r['k']} "
-            f"| {r['any_hits']}/{r['n_items']} ({r['any_rate']:.1%}) "
-            f"| {r['all_hits']}/{r['n_items']} ({r['all_rate']:.1%}) "
-            f"| {r['found_gold_docs']}/{r['total_gold_docs']} ({r['doc_recall']:.1%}) "
-            f"| {r['squad_hits']}/{r['squad_total']} ({r['squad_rate']:.1%}) "
-            f"| {r['hp_any_hits']}/{r['hp_total']} ({r['hp_any_rate']:.1%}) "
-            f"| {r['hp_all_hits']}/{r['hp_total']} ({r['hp_all_rate']:.1%}) "
-            f"| {r['hp_bridge_all']}/{r['hp_bridge_total']} "
-            f"| {r['hp_comp_all']}/{r['hp_comp_total']} |"
+            f"| {r.k} "
+            f"| {r.any_hits}/{r.n_items} ({r.any_rate:.1%}) "
+            f"| {r.all_hits}/{r.n_items} ({r.all_rate:.1%}) "
+            f"| {r.found_gold_docs}/{r.total_gold_docs} ({r.doc_recall:.1%}) "
+            f"| {r.squad_hits}/{r.squad_total} ({r.squad_rate:.1%}) "
+            f"| {r.hp_any_hits}/{r.hp_total} ({r.hp_any_rate:.1%}) "
+            f"| {r.hp_all_hits}/{r.hp_total} ({r.hp_all_rate:.1%}) "
+            f"| {r.hp_bridge_all}/{r.hp_bridge_total} "
+            f"| {r.hp_comp_all}/{r.hp_comp_total} |"
         )
 
-    print("\n### 2. 문맥 길이 및 C-2 권장 `compress.m` 결합 효과 (40문항 평균)\n")
-    print("| k | C-2 권장 m | P1 관찰문 글자 수 | M 압축 전 글자 수 | M 압축 후 글자 수 | 글자 수 감소율 | HotpotQA 끝단 문장 보존 (47) |")
+    print(f"\n### 2. 문맥 길이 및 C-2 권장 `compress.m` 결합 효과 ({first.n_items}문항 평균)\n")
+    print(
+        f"| k | C-2 권장 m | P1 관찰문 글자 수 | M 압축 전 글자 수 | M 압축 후 글자 수 "
+        f"| 글자 수 감소율 | HotpotQA 끝단 문장 보존{sent_hdr} |"
+    )
     print("|---|---|---|---|---|---|---|")
     for r in rows:
-        m_str = str(r["m"]) if r["m"] is not None else "-"
-        if r["m_comp_chars"] is not None and r["m_full_chars"] > 0:
-            comp_str = f"{r['m_comp_chars']:.0f}"
-            red_str = f"{1.0 - (r['m_comp_chars'] / r['m_full_chars']):.1%}"
-            e2e_str = f"{r['hp_e2e_sent_kept']}/{r['hp_e2e_sent_total']} ({r['hp_e2e_sent_rate']:.1%})"
+        m_str = str(r.m) if r.m is not None else "-"
+        if r.m_comp_chars is not None and r.m_full_chars > 0 and r.hp_e2e_sent_rate is not None:
+            comp_str = f"{r.m_comp_chars:.0f}"
+            red_str = f"{1.0 - (r.m_comp_chars / r.m_full_chars):.1%}"
+            e2e_str = f"{r.hp_e2e_sent_kept}/{r.hp_e2e_sent_total} ({r.hp_e2e_sent_rate:.1%})"
+        elif r.m_comp_chars is not None and r.m_full_chars > 0:
+            comp_str = f"{r.m_comp_chars:.0f}"
+            red_str = f"{1.0 - (r.m_comp_chars / r.m_full_chars):.1%}"
+            e2e_str = "-"
         else:
             comp_str = "-"
             red_str = "-"
             e2e_str = "-"
         print(
-            f"| {r['k']} | {m_str} | {r['p1_obs_chars']:.0f} | {r['m_full_chars']:.0f} "
+            f"| {r.k} | {m_str} | {r.p1_obs_chars:.0f} | {r.m_full_chars:.0f} "
             f"| {comp_str} | {red_str} | {e2e_str} |"
         )
 
