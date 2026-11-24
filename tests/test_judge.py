@@ -294,3 +294,22 @@ def test_broken_output_is_not_scored_correct_on_unanswerable_items() -> None:
         assert not score_unanswerable(j.answer)
     explicit = parse_judgment(reply("ABSTAIN"), allow_retrieve=False)
     assert score_unanswerable(explicit.answer)
+
+
+def test_first_judgment_tells_model_to_answer_instead_of_searching_to_confirm() -> None:
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=True)
+    assert "Do not search again only to confirm" in system
+    assert "Do not put a guessed answer in it" in system
+    assert "No more searches are possible" not in system
+
+
+def test_last_judgment_says_no_more_searches() -> None:
+    for fmt in ("json", "tag"):
+        (_, system), _ = build_judge_messages("q", "e", allow_retrieve=False, output_format=fmt)
+        assert "No more searches are possible" in system and "otherwise choose ABSTAIN" in system
+        assert "Do not search again" not in system
+
+
+def test_last_judgment_without_abstain_does_not_mention_abstain() -> None:
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=False, allow_abstain=False)
+    assert "ABSTAIN" not in system
