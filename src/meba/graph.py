@@ -77,6 +77,20 @@ class MComponents:
     concise: bool = False
     dynamic_m: bool = False
 
+    def __post_init__(self) -> None:
+        """핵심 부품이 꺼졌는데 그 위의 조건부 부품이 켜진 구성을 막는다 (SPEC §6, ADR-0006).
+
+        Raises:
+            ValueError: 켜진 조건부 부품이 기대는 핵심 부품 중 하나라도 꺼져 있을 때
+        """
+        for conditional, needs in _CONDITIONAL_DEPENDS_ON.items():
+            missing = [core for core in needs if not getattr(self, core)]
+            if getattr(self, conditional) and missing:
+                raise ValueError(
+                    f"conditional part {conditional!r} needs core part(s) {missing} switched on; "
+                    f"use MComponents.without() to drop a core part together with its conditional parts"
+                )
+
     def without(self, part: str) -> "MComponents":
         """핵심 부품 하나를 끈 구성. 그 위에서 동작하는 조건부 부품도 함께 끈다.
 

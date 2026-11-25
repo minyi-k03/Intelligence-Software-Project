@@ -82,7 +82,7 @@ class FakeChatOllama:
         options = {"num_predict": cap} if cap is not None else {}
         self.callback.on_chat_model_start({}, [[]], invocation_params={"options": options})
         truncated = self.reply.get("truncated", False)
-        out_tokens = 999 if truncated else 8
+        out_tokens = self.reply.get("out_tokens", 999 if truncated else 8)
         response = SimpleNamespace(
             generations=[[
                 SimpleNamespace(
@@ -120,6 +120,10 @@ class FakeFactory:
 
 def route(name: str) -> dict[str, Any]:
     return {"content": f"ROUTE: {name}", "tool_calls": []}
+
+
+def calculator_call(expression: str, call_id: str) -> dict[str, Any]:
+    return {"name": "calculator", "args": {"expression": expression}, "id": call_id}
 
 
 def verdict(decision: str, *, missing: str = "", answer: str = "", truncated: bool = False) -> dict[str, Any]:
@@ -341,6 +345,38 @@ def test_budget_exhausted_is_reported_separately_from_abstain(
     assert result.n_calls == 1 and len(factory.log) == 1
 
 
+def test_budget_runs_out_mid_requery_loop(settings: Settings, index: BM25Index) -> None:
+    """RETRIEVE 뒤 재검색까지 했는데 다음 판정에서 예산이 바닥나면 빈 답, 기권 아님."""
+
+    small = dataclasses.replace(settings, budget=dataclasses.replace(settings.budget, max_calls=2))
+    pipeline, factory = make(small, index, route("search"), verdict("RETRIEVE", missing=FOLLOWUP))
+
+    result = pipeline("q-10b", QUESTION)
+
+    assert result.budget_exhausted is True
+    assert result.answer == "" and result.abstained is False
+    assert result.decisions == ["RETRIEVE"]
+    assert len(result.retrieved_doc_ids) == 2  # 재검색은 실행됐고 판정만 막혔다
+    assert result.n_calls == 2 and len(factory.log) == 2 and result.error is None
+
+
+def test_budget_runs_out_before_math_finalize(settings: Settings, index: BM25Index) -> None:
+    """계산기를 부른 뒤 마무리 호출에서 예산이 바닥나면 수학 경로 그대로 빈 답, 기권 아님."""
+
+    tiny = dataclasses.replace(settings, budget=dataclasses.replace(settings.budget, max_calls=1))
+    pipeline, factory = make(
+        tiny,
+        index,
+        {"content": "ROUTE: math", "tool_calls": [calculator_call("12 * 7", "c1")]},
+    )
+
+    result = pipeline("q-10c", "Each box holds 12 items. How many items in 7 boxes?")
+
+    assert result.route == "math" and result.budget_exhausted is True
+    assert result.answer == "" and result.abstained is False
+    assert steps(result) == ["router"] and len(factory.log) == 1
+
+
 def test_truncated_judgment_retries_once_without_using_budget(
     settings: Settings, index: BM25Index
 ) -> None:
@@ -382,6 +418,24 @@ def test_model_error_is_reported_with_partial_calls(settings: Settings, index: B
     assert result.error is not None and result.error.startswith("RuntimeError")
     assert result.answer == "" and result.abstained is False
     assert steps(result) == ["router"]
+
+
+def test_search_tool_error_is_an_observation_not_a_crash(
+    settings: Settings, index: BM25Index, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """검색 도구가 오류 문자열을 돌려주면 근거 없음으로 보고 판정까지 간다 (오류로 멈추지 않는다)."""
+
+    monkeypatch.setattr(
+        "src.meba.graph.bm25_search", lambda *args, **kwargs: "ERROR: index unavailable"
+    )
+    pipeline, factory = make(settings, index, route("search"), verdict("ABSTAIN"))
+
+    result = pipeline("q-12b", QUESTION)
+
+    assert result.error is None
+    assert result.retrieved_doc_ids == [[]] and result.kept_windows == [[]]
+    assert result.decisions == ["ABSTAIN"] and result.abstained is True
+    assert steps(result) == ["router", "judge"] and len(factory.log) == 2
 
 
 # --- 에이전트에 유형을 알려 주지 않는다 ---------------------------------------
@@ -437,6 +491,38 @@ def test_turning_off_a_core_part_turns_off_conditional_parts_on_top_of_it() -> N
     assert everything.without("cap").concise is False
     # 상관없는 부품을 빼도 조건부 부품은 그대로다.
     assert everything.without("router") == dataclasses.replace(everything, router=False)
+
+
+@pytest.mark.parametrize(
+    ("core", "conditional"),
+    [("cap", "concise"), ("judge", "ledger"), ("requery", "ledger"), ("compress", "dynamic_m")],
+)
+def test_conditional_part_cannot_run_on_a_switched_off_core_part(core: str, conditional: str) -> None:
+    """직접 만든 구성이라도 핵심 부품을 끈 채 그 위의 조건부 부품을 켜면 만들 때 실패한다 (SPEC §6)."""
+
+    with pytest.raises(ValueError, match=rf"{conditional}.*{core}"):
+        MComponents(**{core: False, conditional: True})
+
+
+def test_m_minus_router_runs_the_full_requery_loop(settings: Settings, index: BM25Index) -> None:
+    """라우터를 꺼도 재검색 2회는 그대로: 판정 3회이고 마지막 판정에는 RETRIEVE가 없다."""
+
+    pipeline, factory = make(
+        settings,
+        index,
+        verdict("RETRIEVE", missing="Lewis Carroll birthplace Daresbury"),
+        verdict("RETRIEVE", missing="Oxford college teaching mathematician"),
+        verdict("ANSWER", answer="Daresbury"),
+        variant="m_minus_router",
+    )
+
+    result = pipeline("q-13b", QUESTION)
+
+    assert result.n_calls == 3 and steps(result) == ["judge", "judge", "judge"]
+    assert result.decisions == ["RETRIEVE", "RETRIEVE", "ANSWER"]
+    enums = [c["format"]["properties"]["decision"]["enum"] for c in factory.log]
+    assert ["RETRIEVE" in e for e in enums] == [True, True, False]
+    assert result.answer == "Daresbury" and result.budget_exhausted is False
 
 
 def test_m_minus_router_sends_every_question_to_search(settings: Settings, index: BM25Index) -> None:
@@ -523,6 +609,24 @@ def test_m_minus_cap_calls_without_output_caps(settings: Settings, index: BM25In
     assert result.n_calls == 2  # 호출 예산은 그대로 센다
 
 
+def test_m_minus_cap_long_output_is_not_mistaken_for_truncation(
+    settings: Settings, index: BM25Index
+) -> None:
+    """상한이 없으면 출력 토큰이 많아도(done_reason=stop) 잘림이 아니고 재시도도 없다."""
+
+    long_answer = {**verdict("ANSWER", answer="Daresbury"), "out_tokens": 4096}
+    pipeline, factory = make(
+        settings, index, route("search"), long_answer, variant="m_minus_cap"
+    )
+
+    result = pipeline("q-17b", QUESTION)
+
+    assert [c.truncated for c in result.calls] == [False, False]
+    assert all(c.cap is None for c in result.calls)
+    assert result.n_retries == 0 and len(factory.log) == 2
+    assert result.answer == "Daresbury"
+
+
 def test_m_minus_loop_breaker_repeats_the_same_search(settings: Settings, index: BM25Index) -> None:
     """루프 끊기를 끄면 같은 검색을 다시 실행하고 loop_breaks는 0이다."""
 
@@ -540,6 +644,31 @@ def test_m_minus_loop_breaker_repeats_the_same_search(settings: Settings, index:
     assert result.loop_breaks == 0
     assert len(result.retrieved_doc_ids) == 2  # 같은 검색이 한 번 더 실행됐다
     assert result.decisions == ["RETRIEVE", "ANSWER"]
+
+
+@pytest.mark.parametrize(("variant", "expected_breaks"), [("m", 1), ("m_minus_loop_breaker", 0)])
+def test_loop_breaker_switch_reaches_the_calculator(
+    settings: Settings, index: BM25Index, variant: str, expected_breaks: int
+) -> None:
+    """수학 경로에서 같은 계산기 호출 2회: M은 하나를 막고, 루프 끊기를 끈 변형은 둘 다 실행한다."""
+
+    pipeline, factory = make(
+        settings,
+        index,
+        {
+            "content": "ROUTE: math",
+            "tool_calls": [calculator_call("12 * 7", "c1"), calculator_call("12 * 7", "c2")],
+        },
+        {"content": "Final answer: 84", "tool_calls": []},
+        variant=variant,
+    )
+
+    result = pipeline("q-18b", "Each box holds 12 items. How many items in 7 boxes?")
+
+    assert result.loop_breaks == expected_breaks
+    assert result.answer == "84" and steps(result) == ["router", "finalize"]
+    tool_outputs = [m["content"] for m in factory.log[1]["input"] if m.get("role") == "tool"]
+    assert len(tool_outputs) == 2 and "84" in tool_outputs[1]
 
 
 # --- 조건부 부품 자리 ---------------------------------------------------------
@@ -570,7 +699,7 @@ def test_conditional_hooks_are_called_where_the_parts_attach(
 
     def concise(step: str, model_input: Any) -> Any:
         seen["concise"].append(step)
-        return model_input
+        return [*model_input, {"role": "system", "content": f"CONCISE-{step}"}]
 
     factory = FakeFactory(
         [route("search"), verdict("RETRIEVE", missing="something vague"), verdict("ANSWER", answer="Daresbury")]
@@ -589,6 +718,12 @@ def test_conditional_hooks_are_called_where_the_parts_attach(
     assert seen["m"] == [(QUESTION, settings.compress.m)] * 2
     assert seen["ledger"] == [(QUESTION, "something vague")]
     assert seen["concise"] == ["router", "judge", "judge"]
+    # 훅이 돌려준 입력이 실제로 모델에 간다 (돌려준 값을 버리면 실패한다).
+    assert [entry["input"][-1]["content"] for entry in factory.log] == [
+        "CONCISE-router",
+        "CONCISE-judge",
+        "CONCISE-judge",
+    ]
     assert result.decisions == ["RETRIEVE", "ANSWER"]
 
 
