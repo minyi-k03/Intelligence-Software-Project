@@ -50,6 +50,9 @@ class BudgetedLLM:
         settings: Validated project settings. Defaults to the shared settings.
         callback: Metrics callback used to produce ``CallRecord`` entries.
         llm_factory: Injectable ChatOllama factory, primarily for CPU-only tests.
+        enforce_caps: ``False`` only for the ablation variant ``m_minus_cap``
+            (SPEC §5): calls carry no ``num_predict`` and never retry. The
+            call budget still applies.
     """
 
     def __init__(
@@ -57,12 +60,14 @@ class BudgetedLLM:
         settings: Optional[Settings] = None,
         callback: Optional[MetricsCallbackHandler] = None,
         llm_factory: Callable[..., Any] = create_chat_ollama,
+        enforce_caps: bool = True,
     ) -> None:
         self.settings = settings or get_settings()
         self.callback = callback or MetricsCallbackHandler()
         if self.callback.calls:
             raise ValueError("Use a fresh metrics callback for each question")
         self._llm_factory = llm_factory
+        self._enforce_caps = enforce_caps
         self._n_calls = 0
         self._n_retries = 0
         self._budget_exhausted = False
@@ -124,7 +129,9 @@ class BudgetedLLM:
         }
         if protected.intersection(invoke_kwargs or {}):
             raise ValueError("Model settings and callbacks cannot be overridden via invoke_kwargs")
-        cap = self.cap_for_step(step)
+        # 상한을 꺼도 단계 이름은 검증한다. 상한 없이 부르면 cap=None이라 잘림 재시도도 없다.
+        configured_cap = self.cap_for_step(step)
+        cap = configured_cap if self._enforce_caps else None
         if self._n_calls >= self.settings.budget.max_calls:
             self._budget_exhausted = True
             return BudgetCallResult(response=None, budget_exhausted=True)
@@ -138,7 +145,7 @@ class BudgetedLLM:
             invoke_kwargs=invoke_kwargs,
         )
 
-        if record.truncated:
+        if record.truncated and cap is not None:
             retry_cap = cap * self.settings.cap.retry_multiplier
             response, _ = self._invoke_once(
                 step=step,
@@ -156,7 +163,7 @@ class BudgetedLLM:
         *,
         step: str,
         model_input: Any,
-        cap: int,
+        cap: Optional[int],
         is_retry: bool,
         format_schema: Optional[dict[str, Any] | str],
         invoke_kwargs: Optional[dict[str, Any]],

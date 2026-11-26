@@ -24,6 +24,9 @@ compress:
   m: 7                              # Sentence window retention count (confirmed in Experiment C-2/B-4)
   window: 1                         # Context window size around target sentence (+/- 1 sentence)
 
+judge:
+  format: "json"                    # Evidence-judgment output format: "json" (ADR-0004, confirmed in Experiment C-4) or "tag" (control)
+
 p1:
   max_steps: 7                      # Max steps for P1 ReAct baseline
 

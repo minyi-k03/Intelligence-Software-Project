@@ -226,3 +226,23 @@ def test_router_offers_the_same_calculator_tool_as_p1() -> None:
     from src.tools.calculator import get_calculator_tool
 
     assert CALCULATOR_TOOL_SPEC == function_calling.convert_to_openai_tool(get_calculator_tool())
+
+
+def test_loop_breaker_off_runs_duplicate_calculator_calls_again() -> None:
+    """절제 변형 `m_minus_loop_breaker`: 같은 식을 다시 불러도 막지 않고 loop_breaks도 세지 않는다."""
+
+    duplicate = [
+        {"name": "calculator", "args": {"expression": "12 * 7"}, "id": "a"},
+        {"name": "calculator", "args": {"expression": "12 * 7"}, "id": "b"},
+    ]
+    on, _ = make_budget(say("ROUTE: math", tool_calls=duplicate), say("Final answer: 84"))
+    off, _ = make_budget(say("ROUTE: math", tool_calls=duplicate), say("Final answer: 84"))
+
+    blocked = route_question("Each box holds 12 items. How many in 7 boxes?", on)
+    allowed = route_question(
+        "Each box holds 12 items. How many in 7 boxes?", off, use_loop_breaker=False
+    )
+
+    assert blocked.loop_breaks == 1
+    assert allowed.loop_breaks == 0
+    assert allowed.answer == "84" and allowed.used_calculator is True

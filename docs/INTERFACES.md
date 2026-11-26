@@ -71,6 +71,7 @@
 | `retrieval.k` | 5 (실험 B-4 확정) | SPEC §7 |
 | `compress.m` | 7 (실험 C-2 · B-4 확정) | SPEC §7 |
 | `compress.window` | 1 (앞뒤 1문장) | SPEC §5 |
+| `judge.format` | `json` (기본, ADR-0004) 또는 `tag`(대조군: 자유 서술 + 마지막 줄 태그). 실험 C-4에서 `json` 확정. 값은 `json`·`tag`뿐이고 그 밖의 값은 설정을 읽을 때 `ValueError` | ADR-0004, 실험 C-4 |
 | `p1.max_steps` | 7 | SPEC §3 |
 | `run.timeout_s` | 120 | EVALUATION §4 |
 | `data.seed` | 20261113 (`MANIFEST.json`의 `seed`와 같아야 한다) | ADR-0001 |
@@ -143,6 +144,7 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 
 - 마지막 판정 호출에서는 스키마의 `decision` 값에서 `RETRIEVE`를 뺍니다.
 - 대조군: 같은 내용을 자유 텍스트 + 마지막 줄 태그(예: `DECISION: ANSWER`) + 정규식으로 받는 방식. 잘림률·파싱 실패율을 비교합니다.
+- M이 쓰는 형식은 설정 `judge.format`(§2)이 정합니다. 기본 `json`이고, `tag`로 바꾸면 모든 근거 판정 호출이 대조군 형식(구조화 출력 스키마 없음)으로 바뀝니다. 한 라운드 안에서는 바꿀 수 없습니다(설정 스냅샷이 달라지면 러너가 이어 돌기를 거부).
 - 조건부 부품 "근거 장부 상세화"는 이 스키마에 항목별 `FOUND` / `MISSING` 필드를 추가하는 방식으로 확장합니다 (TBD: C).
 
 ---
@@ -201,6 +203,7 @@ results/runs/<bundle>/<round>/RUN_META.json
   - `"모듈:함수"`: 함수가 `Settings`를 받아 `(qid, question) -> PipelineResult` 호출 가능 객체를 돌려준다 (그래프를 한 번 만들어 재사용하는 M 등).
   - `"call:모듈:함수"`: 함수가 `fn(qid, question, *, settings=None) -> PipelineResult` 형태다 (B-3의 `run_p0`·`run_p0_raw`·`run_p1`). 러너가 `settings=`를 미리 묶는다.
   - (제안: B·A가 자기 파이프라인을 등록할 때 확인)
+- M과 절제 변형은 `src/meba/graph.py`가 만든다. `build_m(settings, *, components, hooks, llm_factory, index)`와 `build_variant(name, settings, ...)`가 `(qid, question) -> PipelineResult`를 돌려주고, `build_m_minus_<부품>(settings)`가 `PIPELINE_FACTORIES`의 `m_minus_<부품>` 항목이다. 부품 켜기/끄기는 `MComponents`(핵심 6개 `router`·`requery`·`judge`·`compress`·`cap`·`loop_breaker`, 조건부 3개 `ledger`·`concise`·`dynamic_m`), 조건부 부품이 붙을 자리는 `ConditionalHooks`(`choose_m`·`ledger`·`concise`)다. `ConditionalHooks.concise(step, model_input)`는 `router`·`finalize` 단계에서는 `list[dict]`(`{"role", "content", ...}`), `judge` 단계에서는 `list[tuple[str, str]]`(`("system"|"human", ...)`)을 받으므로 D-5 구현은 두 형식을 모두 처리한다. 조건부 스위치를 켰는데 함수가 없으면 만들 때 `ValueError`로 멈춘다. 조건부 부품이 기대는 핵심 부품(`ledger`↔`requery`·`judge`, `dynamic_m`↔`compress`, `concise`↔`cap`)을 끈 채 그 조건부 부품을 켜면 `MComponents`를 만들 때 `ValueError`로 멈춘다. 핵심 부품을 뺄 때는 `MComponents.without(part)`를 쓴다. 출력 상한 끄기(`m_minus_cap`)와 계산기 반복 허용(`m_minus_loop_breaker`)을 위해 `BudgetedLLM(enforce_caps=True)`와 `route_question(use_loop_breaker=True)` 옵션을 두었고, 기본값은 기존 동작이다.
 
 ### 7.2 문항별 로그 한 줄 = 메타 + `PipelineResult` + 채점
 

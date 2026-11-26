@@ -109,6 +109,25 @@ def test_last_judgment_prompt_does_not_offer_retrieve() -> None:
         assert "RETRIEVE" not in system
 
 
+def test_json_and_tag_prompts_differ_only_in_the_output_format() -> None:
+    # 태그는 C-4의 대조군이다. 판정 설명·서술 지시가 형식마다 다르면 형식 비교가 무너진다.
+    for allow_retrieve in (True, False):
+        (_, json_system), _ = build_judge_messages("q", "e", allow_retrieve=allow_retrieve, output_format="json")
+        (_, tag_system), _ = build_judge_messages("q", "e", allow_retrieve=allow_retrieve, output_format="tag")
+        assert json_system.split("Reply with a JSON")[0] == tag_system.split("First write")[0]
+        for system in (json_system, tag_system):
+            assert "quote the part of the evidence that answers the question" in system
+
+
+def test_missing_field_forbids_writing_the_answer_only_when_retrieve_is_offered() -> None:
+    # dev r2 진단: 빠진 정보 칸에 답 자체(예: Aristotle)를 써서 재검색하다 기권했다.
+    for fmt in ("json", "tag"):
+        (_, with_retrieve), _ = build_judge_messages("q", "e", allow_retrieve=True, output_format=fmt)
+        (_, last), _ = build_judge_messages("q", "e", allow_retrieve=False, output_format=fmt)
+        assert "Never write a candidate answer here" in with_retrieve
+        assert "candidate answer" not in last
+
+
 def test_empty_evidence_is_stated() -> None:
     _, (_, human) = build_judge_messages("q", "  ", allow_retrieve=True)
     assert human.endswith("Evidence:\n(no evidence was found)")
