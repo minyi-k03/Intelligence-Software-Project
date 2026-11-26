@@ -22,29 +22,17 @@ OutputFormat = Literal["json", "tag"]
 JUDGE_STEP = "judge"
 
 _DECISION_HELP = {
-    "ANSWER": "the evidence states the answer, or the answer can be worked out by combining or comparing facts in the evidence.",
+    "ANSWER": "the evidence states the answer.",
     "RETRIEVE": (
-        "the answer cannot be found or worked out from the evidence yet, but the evidence names "
-        "a specific person, place, work or thing whose missing fact another search could find."
+        "the evidence is related to the question, but one specific fact needed "
+        "for the answer is not in it and could be found by another search."
     ),
-    "ABSTAIN": (
-        "the evidence does not contain the answer and another search is unlikely to find it, "
-        "for example the evidence is on the topic but never mentions what the question asks."
-    ),
+    "ABSTAIN": "the evidence does not contain the answer and another search would not help.",
 }
-_ANSWER_FIRST = (
-    "If you can already name the answer from the evidence, choose ANSWER. "
-    "Do not search again only to confirm an answer you can already give."
-)
-_LAST_STEP = (
-    "No more searches are possible. Choose ANSWER if the evidence states the answer "
-    "or it can be worked out from the evidence; otherwise choose ABSTAIN."
-)
 _MISSING_HELP = (
-    "what is still unknown, written as a short search query about a person, place, work or thing "
-    "named in the question or evidence. Do not put a guessed answer in it"
+    "the missing fact, naming the people, places, works or terms involved "
+    "(used as the next search query)"
 )
-_REASONING_HELP = "one or two sentences: point to the evidence that gives the answer, or say what is missing."
 _NO_EVIDENCE = "(no evidence was found)"
 
 
@@ -141,13 +129,12 @@ def build_judge_messages(
     """
     decisions = allowed_decisions(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain)
     options = "\n".join(f"- {d}: {_DECISION_HELP[d]}" for d in decisions)
-    guide = _ANSWER_FIRST if allow_retrieve else (_LAST_STEP if allow_abstain else "No more searches are possible.")
     names = ", ".join(decisions)
     missing = f"if the decision is RETRIEVE, {_MISSING_HELP}" if allow_retrieve else None
 
     if output_format == "json":
         fields = [
-            f'"reasoning": {_REASONING_HELP}',
+            '"reasoning": one or two sentences on whether the evidence answers the question.',
             f'"decision": one of {names}.',
             f'"missing": {missing}; otherwise "".' if missing else '"missing": "".',
             '"answer": the answer; "" if the decision is RETRIEVE.' if allow_retrieve else '"answer": the answer.',
@@ -159,14 +146,14 @@ def build_judge_messages(
             lines.append(f"MISSING: <{missing}; otherwise NONE>")
         lines.append("ANSWER: <the answer; NONE if the decision is RETRIEVE>" if allow_retrieve else "ANSWER: <the answer>")
         reply = (
-            "First write one or two sentences: point to the evidence that gives the answer, or say what is missing.\n"
+            "First write one or two sentences on whether the evidence answers the question.\n"
             "Then end your reply with these lines:\n" + "\n".join(lines)
         )
 
     system = (
         "You answer a question using only the evidence passages given to you. "
         "Do not use outside knowledge.\n\n"
-        f"Choose one decision:\n{options}\n{guide}\n\n"
+        f"Choose one decision:\n{options}\n\n"
         f"For the answer:\n{CONTENT_INSTRUCTION}\n\n"
         f"{reply}"
     )
