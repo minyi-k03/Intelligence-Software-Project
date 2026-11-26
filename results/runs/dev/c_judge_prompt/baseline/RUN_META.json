@@ -1,0 +1,72 @@
+{
+  "bundle": "dev",
+  "round": "c4",
+  "item_set": "dev",
+  "model_tag": "qwen2.5:7b-instruct-q4_K_M",
+  "settings": {
+    "model": {
+      "tag": "qwen2.5:7b-instruct-q4_K_M",
+      "temperature": 0,
+      "num_ctx": 8192,
+      "keep_alive": -1
+    },
+    "budget": {
+      "max_calls": 4,
+      "max_requery": 2
+    },
+    "cap": {
+      "first": 512,
+      "finalize": 128,
+      "judge": 256,
+      "retry_multiplier": 2
+    },
+    "retrieval": {
+      "k": 5
+    },
+    "compress": {
+      "m": 7,
+      "window": 1
+    },
+    "p1": {
+      "max_steps": 7
+    },
+    "run": {
+      "timeout_s": 120
+    },
+    "data": {
+      "seed": 20261113
+    }
+  },
+  "data_hashes": {
+    "eval.jsonl": "44de0d8a6cf7a34ad49240fc85132d663e94953e3922952ab6067a49be0d84b2",
+    "dev.jsonl": "8f18f76dd903c6d04d43bfeac6b210c271ece0da74f82ebfe097ddd661c5eb3d",
+    "corpus.jsonl": "d562adc177418aa20b9d6abc2c47273901eeab875b62245d1fd074c7c12ba69f"
+  },
+  "pipeline_order": [
+    "json"
+  ],
+  "started_at": "2026-11-24T01:37:52+00:00",
+  "finished_at": "2026-11-24T01:41:27+00:00",
+  "max_vram_mib": null,
+  "max_vram_mib_by_pipeline": {},
+  "sessions": [
+    {
+      "started_at": "2026-11-24T01:37:52+00:00",
+      "finished_at": "2026-11-24T01:41:27+00:00",
+      "git_commit": "c7fe41c17232b50c9027e6816358d163713a85cf",
+      "git_dirty": false,
+      "gpu": {
+        "name": "Tesla T4",
+        "driver": "580.82.07"
+      },
+      "ollama_version": "0.40.17"
+    }
+  ],
+  "git_commit": "c7fe41c17232b50c9027e6816358d163713a85cf",
+  "git_dirty": false,
+  "gpu": {
+    "name": "Tesla T4",
+    "driver": "580.82.07"
+  },
+  "ollama_version": "0.40.17"
+}
