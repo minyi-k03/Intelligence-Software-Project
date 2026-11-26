@@ -21,10 +21,11 @@ OutputFormat = Literal["json", "tag"]
 
 JUDGE_STEP = "judge"
 
-# 판정 프롬프트 v3 (2026-11-26, docs/experiments/2026-11-26-a-m-dev-judge-prompt.md).
-# v2 (dev r2 진단): 근거에 답이 그대로 있는데도 RETRIEVE·ABSTAIN하고, 빠진 정보 칸에 답 자체를 쓰는 실패를 줄인다.
-# v3 (dev r3 진단): v2가 답할 수 없음 문항에서 질문과 한 부분이 어긋나는 비슷한 문장(행동·역할·순서가 다름)을
-# 답으로 낸 실패를 막는다. ABSTAIN에 그 경우를 넣고, 서술에서 인용이 질문의 세부와 맞는지 확인하게 한다.
+# 판정 프롬프트 v2 (2026-11-26, A-5b dev r2 진단): 근거에 답이 그대로 있는데도 RETRIEVE·ABSTAIN하고,
+# 빠진 정보 칸에 답 자체를 쓰는 실패를 줄인다. ABSTAIN 정의는 v1 그대로 둔다
+# (docs/experiments/2026-11-26-a-m-dev-judge-prompt.md).
+# M 구성 동결(11/27)은 v2로 한다 (팀 결정, dev r3와 같은 문자열). v3(ABSTAIN에 "질문과 어긋나는 비슷한 문장"
+# 추가)는 dev r4에서 기각했다: 겨냥한 함정 문항은 그대로 답하고 답 있음 문항만 더 기권했다.
 _DECISION_HELP = {
     "ANSWER": (
         "the evidence gives the answer, in one sentence or by combining facts from the passages. "
@@ -35,11 +36,7 @@ _DECISION_HELP = {
         "you cannot name the answer yet, because one specific fact needed for it is not in "
         "the evidence and could be found by another search."
     ),
-    "ABSTAIN": (
-        "the evidence does not contain the answer, or it only says something similar that does not "
-        "fit the question (for example a different action, role, order of events or condition), "
-        "and another search would not help."
-    ),
+    "ABSTAIN": "the evidence does not contain the answer and another search would not help.",
 }
 _MISSING_HELP = (
     "the missing fact, naming the people, places, works or terms involved "
@@ -47,8 +44,8 @@ _MISSING_HELP = (
 )
 # 두 형식(JSON·태그)이 같은 서술 지시를 쓰게 한 곳에 둔다. 형식 비교(C-4)는 출력 형식만 달라야 한다.
 _REASONING_HELP = (
-    "one or two sentences: quote the part of the evidence that answers the question and check that "
-    "it fits every detail of the question, or say which fact is missing."
+    "one or two sentences: quote the part of the evidence that answers the question, "
+    "or say which fact is missing."
 )
 _NO_EVIDENCE = "(no evidence was found)"
 
