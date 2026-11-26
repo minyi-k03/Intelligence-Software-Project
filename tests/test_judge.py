@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -313,3 +314,72 @@ def test_broken_output_is_not_scored_correct_on_unanswerable_items() -> None:
         assert not score_unanswerable(j.answer)
     explicit = parse_judgment(reply("ABSTAIN"), allow_retrieve=False)
     assert score_unanswerable(explicit.answer)
+
+
+# --- 근거 장부 상세화 (조건부 부품, C-5) ----------------------------------------
+
+
+def ledger_reply(decision: str, ledger: list[dict[str, str]], missing: str = "", answer: str = "") -> str:
+    return json.dumps({"reasoning": "r", "ledger": ledger, "decision": decision, "missing": missing, "answer": answer})
+
+
+def test_ledger_schema_puts_ledger_between_reasoning_and_decision() -> None:
+    schema = judge_schema(allow_retrieve=True, ledger=True)
+    assert list(schema["properties"]) == ["reasoning", "ledger", "decision", "missing", "answer"]
+    assert schema["required"] == ["reasoning", "ledger", "decision", "missing", "answer"]
+    assert schema["properties"]["ledger"]["items"]["properties"]["status"]["enum"] == ["FOUND", "MISSING"]
+
+
+def test_ledger_off_keeps_schema_and_prompt_unchanged() -> None:
+    assert judge_schema(allow_retrieve=True) == judge_schema(allow_retrieve=True, ledger=False)
+    assert "ledger" not in judge_schema(allow_retrieve=True)["properties"]
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=True)
+    assert '"ledger"' not in system and "MISSING item" not in system
+
+
+def test_ledger_prompt_asks_for_items_and_missing_item() -> None:
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=True, ledger=True)
+    assert '"ledger": list each piece of information the question needs' in system
+    assert "copy the MISSING item to search for next from the ledger" in system
+    assert system.index('"reasoning"') < system.index('"ledger"') < system.index('"decision"')
+
+
+def test_ledger_is_json_only() -> None:
+    with pytest.raises(ValueError):
+        build_judge_messages("q", "e", allow_retrieve=True, output_format="tag", ledger=True)
+
+
+def test_retrieve_with_ledger_uses_missing_items() -> None:
+    raw = ledger_reply(
+        "RETRIEVE",
+        [{"item": "author of Wonderland", "status": "FOUND"}, {"item": "birthplace of Lewis Carroll", "status": "MISSING"},
+         {"item": "year of birth", "status": "missing"}],
+        missing="something else",
+    )
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert j.decision == "RETRIEVE" and j.parse_ok
+    assert j.missing == "birthplace of Lewis Carroll; year of birth"
+    assert j.ledger == (("author of Wonderland", "FOUND"), ("birthplace of Lewis Carroll", "MISSING"), ("year of birth", "MISSING"))
+
+
+def test_retrieve_with_ledger_but_no_missing_item_keeps_model_missing() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "author", "status": "FOUND"}], missing="birthplace of the author")
+    assert parse_judgment(raw, allow_retrieve=True, ledger=True).missing == "birthplace of the author"
+
+
+def test_answer_with_ledger_keeps_items_and_clears_missing() -> None:
+    raw = ledger_reply("ANSWER", [{"item": "birthplace", "status": "FOUND"}], missing="x", answer="Daresbury")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert (j.answer, j.missing, j.ledger) == ("Daresbury", "", (("birthplace", "FOUND"),))
+
+
+def test_broken_ledger_entries_are_skipped() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "a"}, "text", {"item": "", "status": "MISSING"}, {"item": "b", "status": "maybe"}], missing="m")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert j.ledger == () and j.missing == "m"
+
+
+def test_ledger_ignored_when_option_off() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "x", "status": "MISSING"}], missing="model missing")
+    j = parse_judgment(raw, allow_retrieve=True)
+    assert j.ledger == () and j.missing == "model missing"

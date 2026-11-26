@@ -48,6 +48,13 @@ _REASONING_HELP = (
     "or say which fact is missing."
 )
 _NO_EVIDENCE = "(no evidence was found)"
+# 조건부 부품 "근거 장부 상세화"(SPEC §6, INTERFACES §5): 판정 호출 안에서 정보 항목별 FOUND/MISSING을 받는다.
+_LEDGER_HELP = (
+    'list each piece of information the question needs, as {"item": a short description, '
+    '"status": "FOUND" if the evidence gives it, otherwise "MISSING"}'
+)
+_LEDGER_MISSING_HELP = "copy the MISSING item to search for next from the ledger"
+LedgerItem = tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,7 @@ class Judgment:
     parse_ok: 출력이 약속한 형식대로였는가 (허용되지 않은 판정 값도 False)
     truncated: 재시도 뒤에도 출력 상한에 걸렸는가
     raw: 모델 출력 원문
+    ledger: 근거 장부 상세화를 켰을 때의 (정보 항목, "FOUND" | "MISSING") 목록. 끄면 빈 튜플
     """
 
     decision: Decision
@@ -71,6 +79,7 @@ class Judgment:
     parse_ok: bool
     truncated: bool
     raw: str
+    ledger: tuple[LedgerItem, ...] = ()
 
     @property
     def abstained(self) -> bool:
@@ -96,29 +105,37 @@ def allowed_decisions(*, allow_retrieve: bool, allow_abstain: bool = True) -> li
     return decisions
 
 
-def judge_schema(*, allow_retrieve: bool, allow_abstain: bool = True) -> dict[str, Any]:
+def judge_schema(*, allow_retrieve: bool, allow_abstain: bool = True, ledger: bool = False) -> dict[str, Any]:
     """Ollama 구조화 출력에 넘길 JSON 스키마.
 
     Args:
         allow_retrieve: RETRIEVE를 허용할지
         allow_abstain: ABSTAIN을 허용할지
+        ledger: 근거 장부 상세화를 켤지. 켜면 서술 다음, 판정 앞에 `ledger` 배열이 들어간다
 
     Returns:
-        키 순서가 reasoning → decision → missing → answer인 스키마 (ADR-0004)
+        키 순서가 reasoning → (ledger →) decision → missing → answer인 스키마 (ADR-0004)
     """
-    return {
-        "type": "object",
-        "properties": {
-            "reasoning": {"type": "string"},
-            "decision": {
-                "type": "string",
-                "enum": allowed_decisions(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain),
+    properties: dict[str, Any] = {"reasoning": {"type": "string"}}
+    if ledger:
+        properties["ledger"] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "item": {"type": "string"},
+                    "status": {"type": "string", "enum": ["FOUND", "MISSING"]},
+                },
+                "required": ["item", "status"],
             },
-            "missing": {"type": "string"},
-            "answer": {"type": "string"},
-        },
-        "required": ["reasoning", "decision", "missing", "answer"],
+        }
+    properties["decision"] = {
+        "type": "string",
+        "enum": allowed_decisions(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain),
     }
+    properties["missing"] = {"type": "string"}
+    properties["answer"] = {"type": "string"}
+    return {"type": "object", "properties": properties, "required": list(properties)}
 
 
 def build_judge_messages(
@@ -128,6 +145,7 @@ def build_judge_messages(
     allow_retrieve: bool,
     allow_abstain: bool = True,
     output_format: OutputFormat = "json",
+    ledger: bool = False,
 ) -> list[tuple[str, str]]:
     """근거 판정 호출의 메시지를 만든다. 문항 유형은 받지도 쓰지도 않는다.
 
@@ -137,18 +155,26 @@ def build_judge_messages(
         allow_retrieve: RETRIEVE를 허용할지
         allow_abstain: ABSTAIN을 허용할지
         output_format: "json"(기본) 또는 "tag"(대조군)
+        ledger: 근거 장부 상세화를 켤지 (JSON 형식에서만)
 
     Returns:
         `ChatOllama.invoke`에 넘길 [("system", ...), ("human", ...)]
+
+    Raises:
+        ValueError: 태그 형식에 장부를 켰을 때
     """
+    if ledger and output_format != "json":
+        raise ValueError("the evidence ledger is only defined for the JSON format")
     decisions = allowed_decisions(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain)
     options = "\n".join(f"- {d}: {_DECISION_HELP[d]}" for d in decisions)
     names = ", ".join(decisions)
-    missing = f"if the decision is RETRIEVE, {_MISSING_HELP}" if allow_retrieve else None
+    missing_help = f"{_MISSING_HELP}; {_LEDGER_MISSING_HELP}" if ledger else _MISSING_HELP
+    missing = f"if the decision is RETRIEVE, {missing_help}" if allow_retrieve else None
 
     if output_format == "json":
         fields = [
             f'"reasoning": {_REASONING_HELP}',
+            *([f'"ledger": {_LEDGER_HELP}.'] if ledger else []),
             f'"decision": one of {names}.',
             f'"missing": {missing}; otherwise "".' if missing else '"missing": "".',
             '"answer": the answer; "" if the decision is RETRIEVE.' if allow_retrieve else '"answer": the answer.',
@@ -195,6 +221,29 @@ def _parse_json_fields(raw: str) -> dict[str, str] | None:
     return {key: _clean(data.get(key)) for key in ("reasoning", "decision", "missing", "answer")}
 
 
+def _parse_ledger(raw: str) -> tuple[LedgerItem, ...]:
+    """JSON 출력에서 장부 항목을 꺼낸다. 없거나 깨진 항목은 건너뛴다."""
+    text = raw.strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return ()
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return ()
+    entries = data.get("ledger") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return ()
+    items: list[LedgerItem] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        item, status = _clean(entry.get("item")), _clean(entry.get("status")).upper()
+        if item and status in ("FOUND", "MISSING"):
+            items.append((item, status))
+    return tuple(items)
+
+
 def _blank_if_none(value: str) -> str:
     """태그 값의 "NONE" 표기를 빈 문자열로 바꾼다."""
     return "" if value.casefold() in {"none", "n/a", "-"} else value
@@ -227,6 +276,7 @@ def parse_judgment(
     allow_abstain: bool = True,
     output_format: OutputFormat = "json",
     truncated: bool = False,
+    ledger: bool = False,
 ) -> Judgment:
     """모델 출력을 `Judgment`로 바꾼다. 예외를 던지지 않는다.
 
@@ -241,6 +291,8 @@ def parse_judgment(
         allow_abstain: 이 호출에서 ABSTAIN을 허용했는지
         output_format: 호출에 쓴 형식
         truncated: 출력이 상한에 걸렸는지 (그대로 결과에 싣는다)
+        ledger: 근거 장부를 켰는지. 켜면 RETRIEVE의 빠진 정보를 장부의 MISSING 항목으로 정한다
+            (MISSING 항목이 없으면 모델이 쓴 `missing`을 쓴다)
 
     Returns:
         정리된 판정. ABSTAIN이면 `answer`는 "UNANSWERABLE"
@@ -262,14 +314,20 @@ def parse_judgment(
     elif is_abstained(answer):
         answer = UNANSWERABLE
 
+    items = _parse_ledger(raw) if ledger and output_format == "json" else ()
+    missing = fields["missing"]
+    if decision == "RETRIEVE" and items:
+        missing = "; ".join(item for item, status in items if status == "MISSING") or missing
+
     return Judgment(
         decision=decision,  # type: ignore[arg-type]
         answer=answer,
-        missing=fields["missing"] if decision == "RETRIEVE" else "",
+        missing=missing if decision == "RETRIEVE" else "",
         reasoning=fields["reasoning"],
         parse_ok=parse_ok,
         truncated=truncated,
         raw=raw,
+        ledger=items,
     )
 
 
@@ -295,6 +353,7 @@ def judge(
     allow_retrieve: bool,
     allow_abstain: bool = True,
     output_format: OutputFormat = "json",
+    ledger: bool = False,
 ) -> Judgment | None:
     """근거 판정 + 답 호출을 한 번 한다.
 
@@ -308,6 +367,7 @@ def judge(
         allow_retrieve: RETRIEVE를 허용할지. 마지막 판정에서는 False
         allow_abstain: ABSTAIN을 허용할지
         output_format: "json"(기본) 또는 "tag"(대조군)
+        ledger: 근거 장부 상세화(조건부 부품)를 켤지
 
     Returns:
         판정 결과. 호출 예산이 이미 소진되어 모델을 부르지 못했으면 None
@@ -318,8 +378,13 @@ def judge(
         allow_retrieve=allow_retrieve,
         allow_abstain=allow_abstain,
         output_format=output_format,
+        ledger=ledger,
     )
-    schema = judge_schema(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain) if output_format == "json" else None
+    schema = (
+        judge_schema(allow_retrieve=allow_retrieve, allow_abstain=allow_abstain, ledger=ledger)
+        if output_format == "json"
+        else None
+    )
     result = llm.invoke(JUDGE_STEP, messages, format_schema=schema)
     if result.budget_exhausted:
         return None
@@ -330,6 +395,7 @@ def judge(
         allow_abstain=allow_abstain,
         output_format=output_format,
         truncated=llm.calls[-1].truncated,
+        ledger=ledger,
     )
     llm.callback.record_parse_result(judgment.parse_ok)
     return judgment

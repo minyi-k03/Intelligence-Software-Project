@@ -333,6 +333,7 @@ def _compile_graph(
             allow_retrieve=allow_retrieve,
             allow_abstain=components.judge,
             output_format=cast(OutputFormat, settings.judge.format),  # 값은 설정을 읽을 때 이미 검증됨
+            ledger=components.ledger,
         )
         if judgment is None:  # 호출 예산 소진: 답을 만들지 못했다 (기권이 아니다).
             return {"answer": "", "retrieve": False}
