@@ -3,9 +3,9 @@
 - 날짜: 2026-11-26
 - 담당: A (통합). 근거 판정(`src/meba/judge.py`)은 C 담당 모듈이라 PR 설명에 수정 이유를 쓴다
 - 관련 부품 / 설정 키: 근거 판정 지시문 (`_DECISION_HELP`, `_MISSING_HELP`, `_REASONING_HELP`), `judge.format`=json
-- 실행 로그: `results/runs/dev/r2/m.jsonl` (v1), `results/runs/dev/r3/m.jsonl` (v2), 비교 대상 P1은 `results/runs/dev/r1/p1.jsonl`
-- 실행: `notebooks/verify_a5b.ipynb` §8(r2), §13~15(진단·r3·비교) (Colab T4)
-- git 커밋: r2 = `69b824e`, r3 = (v2 커밋, 실행 후 기입)
+- 실행 로그: `results/runs/dev/r2/m.jsonl` (v1), `results/runs/dev/r3/m.jsonl` (v2), `results/runs/dev/r4/m.jsonl` (v3), 비교 대상 P1은 `results/runs/dev/r1/p1.jsonl`
+- 실행: `notebooks/verify_a5b.ipynb` §8(r2), §13~15(진단·r3·비교), §18~19(r4·비교) (VS Code + Colab T4 커널)
+- git 커밋: r2 = `69b824e`, r3 = `9d8f0a4`, r4 = (v3 커밋, 실행 후 기입)
 - 환경: `qwen2.5:7b-instruct-q4_K_M`, temperature 0, `num_ctx` 8192, `retrieval.k` 5, `compress.m` 7, `compress.window` 1, `budget.max_requery` 2, `cap.judge` 256
 
 ## 질문
@@ -71,29 +71,70 @@ SPEC §7의 유형별 목표 호출 수는 SQuAD 2회, HotpotQA 3~4회다. 그�
 - 따로 볼 것: SQuAD 답할 수 없음의 정답 수. 기권을 덜 하게 만들면 여기가 먼저 나빠진다
 - 확인: 수학 경로는 바뀌지 않았으므로 GSM8K 결과가 r2와 같아야 한다
 
-### 결과 (r3 실행 후 기입)
+### 결과 (r3, 커밋 `9d8f0a4`)
 
 | 유형 | v1 정답 | v2 정답 | 새로 맞힘 | 새로 틀림 | 순정답 수 |
 |---|---|---|---|---|---|
-| HotpotQA (20) | 3 | | | | |
-| SQuAD 답 있음 (10) | 2 | | | | |
-| SQuAD 답할 수 없음 (10) | 7 | | | | |
-| GSM8K (20) | 17 | | | | |
+| HotpotQA (20) | 3 | 5 | 2 | 0 | +2 |
+| SQuAD 답 있음 (10) | 2 | 5 | 4 | 1 | +3 |
+| SQuAD 답할 수 없음 (10) | 7 | 4 | 0 | 3 | **−3** |
+| GSM8K (20) | 17 | 17 | 0 | 0 | 0 (답 60/60 동일) |
 
 | 지표 | v1 | v2 | 변화 |
 |---|---|---|---|
-| 과잉 기권률 | 0.38 | | |
-| 호출 수/문항 | 2.32 | | |
-| 시간/문항 | 5.81s | | |
-| 판정 분포 (ANSWER / RETRIEVE / ABSTAIN) | 14 / 35 / 26 | | |
-| 근거에 정답 있는데 정답 아님 (답 있는 검색 문항) | ≥ 19 (§13에서 확정) | | |
-| 잘림 · 파싱 실패 · 예산 소진 | 0 · 0 · 0 | | |
+| 정답 | 29/60 | 31/60 | +2 (McNemar 정확 p = 0.754) |
+| 과잉 기권률 | 0.38 | 0.18 | −0.20 |
+| 호출 수/문항 | 2.32 | 1.90 | −18% |
+| 시간/문항 | 5.81s | 4.83s | −17% |
+| 판정 분포 (ANSWER / RETRIEVE / ABSTAIN) | 14 / 35 / 26 | 27 / 10 / 13 | 재검색 고리 감소 |
+| 1차 근거에 정답 있는 24문항의 첫 판정 (ANSWER / RETRIEVE / ABSTAIN) | 7 / 12 / 5 | 17 / 4 / 3 | |
+| 근거에 정답 있는데 정답 아님 (답 있는 검색 문항) | 19 (기권 14, 오답 5) | 15 (기권 6, 오답 9) | |
+| 오류 · 예산 소진 | 0 · 0 | 0 · 0 | |
 
-정답→오답으로 바뀐 문항: (qid와 짧은 원인)
+정답→오답으로 바뀐 문항
+- `squad2-0050`, `squad2-0053`, `squad2-0059` (답할 수 없음): 근거에 비슷하지만 질문과 한 부분이 어긋나는 문장이 있다. 각각 순서(영양분 획득 "전"의 역할 ↔ 영양분 획득 수단으로 진화), 행동(motivate ↔ suppress), 역할(participants ↔ observers)이 다르다. v2는 그 문장을 답으로 냈다.
+- `squad2-0043` (답 있음): 정답 문장의 일부(`every year between 1346 and 1671`)만 답해 EM이 틀렸다. 기권과는 무관하고, 답의 범위 문제다.
 
-## 결정
+## 결정 (v2)
 
-(r3 실행 후) 채택 / 기각 / 재실험 — 이유 한두 문장.
+**채택 기준 미달 → 재실험(v3).** 목표 지표(과잉 기권 0.38 → 0.18, 호출 2.32 → 1.90)는 좋아졌다. 그러나 SQuAD 답할 수 없음 정답이 7 → 4로 줄어, 실행 전에 정한 "유형별 정답 수가 줄지 않음"을 지키지 못했다. 기준을 사후에 바꾸지 않고, 실패 원인(질문과 어긋나는 비슷한 문장을 답으로 냄)만 겨냥한 v3를 같은 기준으로 시험한다.
+
+## 4단계: 근거 판정 프롬프트 v3 (r4)
+
+| 조건 | 설명 |
+|---|---|
+| 기준선 | v1 (r2, 현재 M). 채택 판정은 v1과 비교한다 |
+| 변경 (v3, r4) | v2에 두 가지만 더했다. ANSWER·RETRIEVE·빠진 정보 지시는 v2 그대로다 |
+
+| 자리 | v2 | v3 |
+|---|---|---|
+| ABSTAIN | the evidence does not contain the answer and another search would not help. | the evidence does not contain the answer, **or it only says something similar that does not fit the question (for example a different action, role, order of events or condition)**, and another search would not help. |
+| 서술 | quote the part of the evidence that answers the question, or say which fact is missing. | quote the part of the evidence that answers the question **and check that it fits every detail of the question**, or say which fact is missing. |
+
+### 채택 기준 (실행 전에 정함)
+
+- v3가 **유형별 정답 수에서 v1보다 줄지 않고**, 과잉 기권률과 호출 수(워밍업 제외)가 v1보다 좋아지면 채택한다. 노트북 §19가 이 세 조건을 자동으로 판정한다.
+- 셋 다 통과하지 못하면 v1(현재 M)과 v2 중 무엇으로 M 구성을 동결할지(11/27) 팀이 정한다. 이 실험에서 v2를 사후 채택하지 않는다.
+- 같은 개발 세트 60문항으로 세 번째 시험하는 프롬프트다. 결과는 개발 세트에 맞춰진 쪽으로 기울 수 있으므로 효과는 평가 세트 결과로만 주장한다.
+
+### 결과 (r4 실행 후 기입)
+
+| 유형 | v1 정답 | v2 정답 | v3 정답 |
+|---|---|---|---|
+| HotpotQA (20) | 3 | 5 | |
+| SQuAD 답 있음 (10) | 2 | 5 | |
+| SQuAD 답할 수 없음 (10) | 7 | 4 | |
+| GSM8K (20) | 17 | 17 | |
+
+| 지표 | v1 | v2 | v3 |
+|---|---|---|---|
+| 과잉 기권률 | 0.38 | 0.18 | |
+| 호출 수/문항 | 2.32 | 1.90 | |
+| 시간/문항 | 5.81s | 4.83s | |
+
+## 결정 (v3)
+
+(r4 실행 후) 채택 / 기각 — 이유 한두 문장.
 
 ## 이 결과를 읽을 때 주의할 점
 

@@ -128,6 +128,16 @@ def test_missing_field_forbids_writing_the_answer_only_when_retrieve_is_offered(
         assert "candidate answer" not in last
 
 
+def test_abstain_covers_near_miss_evidence_only_when_abstain_is_offered() -> None:
+    # dev r3 진단: 답할 수 없음 문항에서 질문과 한 부분이 어긋난 비슷한 문장(motivate vs suppress)을 답으로 냈다.
+    for fmt in ("json", "tag"):
+        (_, with_abstain), _ = build_judge_messages("q", "e", allow_retrieve=True, output_format=fmt)
+        (_, without), _ = build_judge_messages("q", "e", allow_retrieve=True, allow_abstain=False, output_format=fmt)
+        assert "says something similar that does not fit the question" in with_abstain
+        assert "similar that does not fit" not in without
+        assert "check that it fits every detail of the question" in with_abstain
+
+
 def test_empty_evidence_is_stated() -> None:
     _, (_, human) = build_judge_messages("q", "  ", allow_retrieve=True)
     assert human.endswith("Evidence:\n(no evidence was found)")
