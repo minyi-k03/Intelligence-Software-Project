@@ -739,7 +739,9 @@ def test_conditional_hooks_are_called_where_the_parts_attach(
         return FOLLOWUP
 
     def concise(step: str, model_input: Any) -> Any:
-        seen["concise"].append(step)
+        seen["concise"].append((step, type(model_input[0])))
+        if isinstance(model_input[0], tuple):
+            return [*model_input, ("system", f"CONCISE-{step}")]
         return [*model_input, {"role": "system", "content": f"CONCISE-{step}"}]
 
     factory = FakeFactory(
@@ -758,13 +760,14 @@ def test_conditional_hooks_are_called_where_the_parts_attach(
     assert [len(w) for w in result.kept_windows] == [2, 2]
     assert seen["m"] == [(QUESTION, settings.compress.m)] * 2
     assert seen["ledger"] == [(QUESTION, "something vague")]
-    assert seen["concise"] == ["router", "judge", "judge"]
+    # router는 list[dict], judge는 list[tuple] 형식으로 넘어온다 (INTERFACES §7.1).
+    assert seen["concise"] == [("router", dict), ("judge", tuple), ("judge", tuple)]
     # 훅이 돌려준 입력이 실제로 모델에 간다 (돌려준 값을 버리면 실패한다).
-    assert [entry["input"][-1]["content"] for entry in factory.log] == [
-        "CONCISE-router",
-        "CONCISE-judge",
-        "CONCISE-judge",
+    last_contents = [
+        entry["input"][-1][1] if isinstance(entry["input"][-1], tuple) else entry["input"][-1]["content"]
+        for entry in factory.log
     ]
+    assert last_contents == ["CONCISE-router", "CONCISE-judge", "CONCISE-judge"]
     assert result.decisions == ["RETRIEVE", "ANSWER"]
 
 
