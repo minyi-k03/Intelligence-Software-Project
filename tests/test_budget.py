@@ -348,3 +348,35 @@ def test_mock_answer_path_and_pipeline_log_with_duplicate_tool() -> None:
     assert row["n_retries"] == 0
     assert row["calls"][0]["step"] == "finalize"
     assert not row["budget_exhausted"]
+
+
+def test_caps_disabled_sends_no_num_predict_and_never_retries() -> None:
+    """절제 변형 `m_minus_cap`: 상한 없이 호출하고, 상한이 없으니 잘림 재시도도 없다."""
+
+    factory = FakeFactory([reply("long answer", truncated=True)])
+    budget = BudgetedLLM(
+        load_settings("configs/default.yaml"), llm_factory=factory, enforce_caps=False
+    )
+
+    result = budget.invoke("judge", "evidence")
+
+    assert result.response.content == "long answer"
+    assert factory.caps == [None]
+    assert budget.n_calls == 1
+    assert budget.n_retries == 0
+    assert [record.cap for record in budget.calls] == [None]
+    assert [record.is_retry for record in budget.calls] == [False]
+
+
+def test_caps_disabled_still_counts_the_call_budget() -> None:
+    """상한을 꺼도 호출 예산(문항당 4회)은 그대로 적용된다."""
+
+    settings = load_settings("configs/default.yaml")
+    factory = FakeFactory([reply() for _ in range(settings.budget.max_calls)])
+    budget = BudgetedLLM(settings, llm_factory=factory, enforce_caps=False)
+
+    for _ in range(settings.budget.max_calls):
+        assert budget.invoke("judge", "evidence").response is not None
+    blocked = budget.invoke("judge", "evidence")
+
+    assert blocked.response is None and blocked.budget_exhausted

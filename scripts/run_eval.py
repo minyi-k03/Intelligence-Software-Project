@@ -42,6 +42,13 @@ PIPELINE_FACTORIES: dict[str, str] = {
     "p0_raw": "call:src.baselines.p0:run_p0_raw",
     "p1": "call:src.baselines.p1_react:run_p1",
     "m": "src.meba.graph:build_m",
+    # 절제 변형 (핵심 부품 6개를 하나씩 끈 것). 조건부 부품은 채택되면 변형을 추가한다.
+    "m_minus_router": "src.meba.graph:build_m_minus_router",
+    "m_minus_requery": "src.meba.graph:build_m_minus_requery",
+    "m_minus_judge": "src.meba.graph:build_m_minus_judge",
+    "m_minus_compress": "src.meba.graph:build_m_minus_compress",
+    "m_minus_cap": "src.meba.graph:build_m_minus_cap",
+    "m_minus_loop_breaker": "src.meba.graph:build_m_minus_loop_breaker",
 }
 
 DEFAULT_PIPELINES = ("p0", "p0_raw", "p1", "m")

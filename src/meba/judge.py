@@ -21,17 +21,31 @@ OutputFormat = Literal["json", "tag"]
 
 JUDGE_STEP = "judge"
 
+# 판정 프롬프트 v2 (2026-11-26, A-5b dev r2 진단): 근거에 답이 그대로 있는데도 RETRIEVE·ABSTAIN하고,
+# 빠진 정보 칸에 답 자체를 쓰는 실패를 줄인다. ABSTAIN 정의는 v1 그대로 둔다
+# (docs/experiments/2026-11-26-a-m-dev-judge-prompt.md).
+# M 구성 동결(11/27)은 v2로 한다 (팀 결정, dev r3와 같은 문자열). v3(ABSTAIN에 "질문과 어긋나는 비슷한 문장"
+# 추가)는 dev r4에서 기각했다: 겨냥한 함정 문항은 그대로 답하고 답 있음 문항만 더 기권했다.
 _DECISION_HELP = {
-    "ANSWER": "the evidence states the answer.",
+    "ANSWER": (
+        "the evidence gives the answer, in one sentence or by combining facts from the passages. "
+        "Choose this whenever you can name the answer from the evidence, even if it is worded "
+        "differently from the question."
+    ),
     "RETRIEVE": (
-        "the evidence is related to the question, but one specific fact needed "
-        "for the answer is not in it and could be found by another search."
+        "you cannot name the answer yet, because one specific fact needed for it is not in "
+        "the evidence and could be found by another search."
     ),
     "ABSTAIN": "the evidence does not contain the answer and another search would not help.",
 }
 _MISSING_HELP = (
     "the missing fact, naming the people, places, works or terms involved "
-    "(used as the next search query)"
+    "(used as the next search query). Never write a candidate answer here"
+)
+# 두 형식(JSON·태그)이 같은 서술 지시를 쓰게 한 곳에 둔다. 형식 비교(C-4)는 출력 형식만 달라야 한다.
+_REASONING_HELP = (
+    "one or two sentences: quote the part of the evidence that answers the question, "
+    "or say which fact is missing."
 )
 _NO_EVIDENCE = "(no evidence was found)"
 
@@ -134,7 +148,7 @@ def build_judge_messages(
 
     if output_format == "json":
         fields = [
-            '"reasoning": one or two sentences on whether the evidence answers the question.',
+            f'"reasoning": {_REASONING_HELP}',
             f'"decision": one of {names}.',
             f'"missing": {missing}; otherwise "".' if missing else '"missing": "".',
             '"answer": the answer; "" if the decision is RETRIEVE.' if allow_retrieve else '"answer": the answer.',
@@ -146,7 +160,7 @@ def build_judge_messages(
             lines.append(f"MISSING: <{missing}; otherwise NONE>")
         lines.append("ANSWER: <the answer; NONE if the decision is RETRIEVE>" if allow_retrieve else "ANSWER: <the answer>")
         reply = (
-            "First write one or two sentences on whether the evidence answers the question.\n"
+            f"First write {_REASONING_HELP}\n"
             "Then end your reply with these lines:\n" + "\n".join(lines)
         )
 

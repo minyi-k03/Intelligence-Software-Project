@@ -7,15 +7,19 @@ References:
 
 from dataclasses import asdict
 from pathlib import Path
+import re
 import tempfile
 from types import SimpleNamespace
+from typing import get_args
 import unittest
 from unittest.mock import patch
 
 from src.common.types import CallRecord, PipelineResult
 from src.config.callbacks import MetricsCallbackHandler
 from src.config.llm import create_chat_ollama, get_llm_kwargs
+from src.meba.judge import OutputFormat
 from src.config.settings import (
+    JUDGE_FORMATS,
     ModelConfig,
     Settings,
     get_settings,
@@ -47,6 +51,44 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(settings.p1.max_steps, 7)
         self.assertEqual(settings.run.timeout_s, 120)
         self.assertEqual(settings.data.seed, 20261113)
+
+    def test_judge_format_defaults_to_json_and_accepts_tag(self):
+        """`judge.format`은 기본 json(ADR-0004)이고, 대조군 tag로 바꿀 수 있다 (INTERFACES §2)."""
+        full_text = Path("configs/default.yaml").read_text(encoding="utf-8")
+        self.assertEqual(load_settings("configs/default.yaml").judge.format, "json")
+        self.assertEqual(load_settings("configs/default.yaml").to_dict()["judge"], {"format": "json"})
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tf:
+            tf.write(full_text.replace('format: "json"', 'format: "tag"'))
+            tag_path = Path(tf.name)
+        try:
+            self.assertEqual(load_settings(tag_path).judge.format, "tag")
+        finally:
+            tag_path.unlink(missing_ok=True)
+
+    def test_judge_format_rejects_other_values_and_missing_section(self):
+        """json·tag 밖의 값, `judge` 섹션 누락은 조용히 넘어가지 않고 ValueError."""
+        full_text = Path("configs/default.yaml").read_text(encoding="utf-8")
+        without_judge = re.sub(r"^judge:\n(?:[ \t]+.*\n)+", "", full_text, flags=re.MULTILINE)
+        self.assertNotEqual(without_judge, full_text)  # 정말로 judge 블록을 지웠는지
+        bad_texts = {
+            "unknown value": full_text.replace('format: "json"', 'format: "xml"'),
+            "missing section": without_judge,
+        }
+        for label, text in bad_texts.items():
+            with self.subTest(label):
+                with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tf:
+                    tf.write(text)
+                    path = Path(tf.name)
+                try:
+                    with self.assertRaises(ValueError):
+                        load_settings(path)
+                finally:
+                    path.unlink(missing_ok=True)
+
+    def test_judge_formats_match_the_formats_the_judge_can_parse(self):
+        """설정이 받는 값과 `judge.py`가 처리하는 `OutputFormat`이 어긋나지 않는다."""
+        self.assertEqual(set(JUDGE_FORMATS), set(get_args(OutputFormat)))
 
     def test_no_hardcoded_dataclass_defaults(self):
         """Config dataclasses must require explicit values (no hardcoded defaults in code)."""

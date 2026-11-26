@@ -24,6 +24,7 @@ _REQUIRED_SECTIONS = (
     "cap",
     "retrieval",
     "compress",
+    "judge",
     "p1",
     "run",
     "data",
@@ -110,6 +111,20 @@ class CompressConfig:
             raise ValueError(f"compress.window cannot be negative. Got: {self.window!r}")
 
 
+JUDGE_FORMATS = ("json", "tag")
+
+
+@dataclass
+class JudgeConfig:
+    """근거 판정 호출의 출력 형식. json이 기본(ADR-0004), tag는 대조군."""
+
+    format: str
+
+    def __post_init__(self) -> None:
+        if self.format not in JUDGE_FORMATS:
+            raise ValueError(f"judge.format must be one of {JUDGE_FORMATS}. Got: {self.format!r}")
+
+
 @dataclass
 class P1Config:
     max_steps: int
@@ -146,6 +161,7 @@ class Settings:
     cap: CapConfig
     retrieval: RetrievalConfig
     compress: CompressConfig
+    judge: JudgeConfig
     p1: P1Config
     run: RunConfig
     data: DataConfig
@@ -270,6 +286,7 @@ def load_settings(config_path: Optional[str | Path] = None) -> Settings:
         cap=_build_section(CapConfig, "cap", raw["cap"]),
         retrieval=_build_section(RetrievalConfig, "retrieval", raw["retrieval"]),
         compress=_build_section(CompressConfig, "compress", raw["compress"]),
+        judge=_build_section(JudgeConfig, "judge", raw["judge"]),
         p1=_build_section(P1Config, "p1", raw["p1"]),
         run=_build_section(RunConfig, "run", raw["run"]),
         data=_build_section(DataConfig, "data", raw["data"]),

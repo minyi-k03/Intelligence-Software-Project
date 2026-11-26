@@ -143,12 +143,16 @@ def parse_route(text: str, *, has_tool_call: bool = False) -> Route:
     return "math" if has_tool_call else "search"
 
 
-def route_question(question: str, budget: BudgetedLLM) -> RouterOutcome:
+def route_question(
+    question: str, budget: BudgetedLLM, *, use_loop_breaker: bool = True
+) -> RouterOutcome:
     """Run the router call for one question.
 
     Args:
         question: Question text only. No dataset type or source is ever passed.
         budget: Per-question budgeted model wrapper (caps, retry, call budget).
+        use_loop_breaker: ``False`` only for the ablation ``m_minus_loop_breaker``:
+            duplicate calculator calls are executed again and not counted.
 
     Returns:
         The chosen route and, for the math path, the answer.
@@ -171,7 +175,9 @@ def route_question(question: str, budget: BudgetedLLM) -> RouterOutcome:
     if not tool_calls:
         return RouterOutcome(route=route, answer=extract_final_answer(_strip_route_line(text)))
 
-    return _finalize_with_calculator(question, text, tool_calls, budget)
+    return _finalize_with_calculator(
+        question, text, tool_calls, budget, use_loop_breaker=use_loop_breaker
+    )
 
 
 def _finalize_with_calculator(
@@ -179,6 +185,8 @@ def _finalize_with_calculator(
     first_text: str,
     tool_calls: list[dict[str, Any]],
     budget: BudgetedLLM,
+    *,
+    use_loop_breaker: bool = True,
 ) -> RouterOutcome:
     """Run requested calculator calls, then make the capped finalize call.
 
@@ -187,6 +195,8 @@ def _finalize_with_calculator(
         first_text: Raw text of the first call (the ``ROUTE:`` line is dropped).
         tool_calls: Calculator calls requested by the first call.
         budget: Per-question budgeted model wrapper.
+        use_loop_breaker: ``False`` only for ``m_minus_loop_breaker``; see
+            :func:`route_question`.
 
     Returns:
         Math-path outcome whose answer comes from the finalize call.
@@ -209,8 +219,10 @@ def _finalize_with_calculator(
             output = "ERROR: calculator requires a string 'expression' argument"
         else:
             # 식 문자열만 키로 쓴다. 인자 전체를 넘기면 정규화할 수 없는 값에서 TypeError가 난다.
-            outcome = breaker.run(name, expression, lambda e=expression: calculate(e))
-            output = outcome.result
+            if use_loop_breaker:
+                output = breaker.run(name, expression, lambda e=expression: calculate(e)).result
+            else:
+                output = calculate(expression)
             used_calculator = True
         tool_messages.append({"role": "tool", "tool_call_id": call_id, "content": str(output)})
 
