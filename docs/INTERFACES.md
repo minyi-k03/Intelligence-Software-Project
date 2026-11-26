@@ -71,6 +71,7 @@
 | `retrieval.k` | 5 (실험 B-4 확정) | SPEC §7 |
 | `compress.m` | 7 (실험 C-2 · B-4 확정) | SPEC §7 |
 | `compress.window` | 1 (앞뒤 1문장) | SPEC §5 |
+| `judge.format` | `json` (기본, ADR-0004) 또는 `tag`(대조군: 자유 서술 + 마지막 줄 태그). 실험 C-4에서 `json` 확정. 값은 `json`·`tag`뿐이고 그 밖의 값은 설정을 읽을 때 `ValueError` | ADR-0004, 실험 C-4 |
 | `p1.max_steps` | 7 | SPEC §3 |
 | `run.timeout_s` | 120 | EVALUATION §4 |
 | `data.seed` | 20261113 (`MANIFEST.json`의 `seed`와 같아야 한다) | ADR-0001 |
@@ -143,6 +144,7 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 
 - 마지막 판정 호출에서는 스키마의 `decision` 값에서 `RETRIEVE`를 뺍니다.
 - 대조군: 같은 내용을 자유 텍스트 + 마지막 줄 태그(예: `DECISION: ANSWER`) + 정규식으로 받는 방식. 잘림률·파싱 실패율을 비교합니다.
+- M이 쓰는 형식은 설정 `judge.format`(§2)이 정합니다. 기본 `json`이고, `tag`로 바꾸면 모든 근거 판정 호출이 대조군 형식(구조화 출력 스키마 없음)으로 바뀝니다. 한 라운드 안에서는 바꿀 수 없습니다(설정 스냅샷이 달라지면 러너가 이어 돌기를 거부).
 - 조건부 부품 "근거 장부 상세화"는 이 스키마에 항목별 `FOUND` / `MISSING` 필드를 추가하는 방식으로 확장합니다 (TBD: C).
 
 ---

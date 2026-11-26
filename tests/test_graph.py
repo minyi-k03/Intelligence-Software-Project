@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("langgraph")
 
 from src.common.types import PipelineResult  # noqa: E402
-from src.config.settings import RetrievalConfig, Settings, load_settings  # noqa: E402
+from src.config.settings import JudgeConfig, RetrievalConfig, Settings, load_settings  # noqa: E402
 from src.eval.scorer import UNANSWERABLE  # noqa: E402
 from src.meba.graph import (  # noqa: E402
     CONDITIONAL_PARTS,
@@ -181,6 +181,47 @@ def test_search_route_answers_after_one_judgment(settings: Settings, index: BM25
     assert judge_call["cap"] == settings.cap.judge
     assert list(judge_call["format"]["properties"]) == ["reasoning", "decision", "missing", "answer"]
     assert "RETRIEVE" in judge_call["format"]["properties"]["decision"]["enum"]
+
+
+def tag_verdict(decision: str, *, missing: str = "NONE", answer: str = "NONE") -> dict[str, Any]:
+    """대조군 형식(자유 서술 + 마지막 줄 태그)의 근거 판정 응답."""
+    text = f"The evidence is related.\nDECISION: {decision}\nMISSING: {missing}\nANSWER: {answer}"
+    return {"content": text, "tool_calls": []}
+
+
+def test_judge_format_tag_switches_the_control_format_end_to_end(settings: Settings, index: BM25Index) -> None:
+    """`judge.format=tag`면 판정 호출에 JSON 스키마가 없고, 태그 답이 재검색 루프까지 정상으로 흐른다."""
+
+    tag_settings = dataclasses.replace(settings, judge=JudgeConfig(format="tag"))
+    pipeline, factory = make(
+        tag_settings,
+        index,
+        route("search"),
+        tag_verdict("RETRIEVE", missing=FOLLOWUP),
+        tag_verdict("ANSWER", answer="Daresbury"),
+    )
+
+    result = pipeline("q-1", QUESTION)
+
+    assert result.answer == "Daresbury" and result.error is None
+    assert result.decisions == ["RETRIEVE", "ANSWER"]
+    judge_calls = [call for call in factory.log if call["cap"] == settings.cap.judge]
+    assert len(judge_calls) == 2
+    assert all(call["format"] is None for call in judge_calls)
+    assert all("DECISION:" in call["input"][0][1] for call in judge_calls)
+    assert [c.parse_ok for c in result.calls if c.step == "judge"] == [True, True]
+
+
+def test_judge_format_default_json_keeps_the_structured_schema(settings: Settings, index: BM25Index) -> None:
+    """기본(`json`)은 A-5a 동작 그대로 구조화 출력 스키마를 쓴다."""
+
+    assert settings.judge.format == "json"
+    pipeline, factory = make(settings, index, route("search"), verdict("ANSWER", answer="Daresbury"))
+
+    pipeline("q-1", QUESTION)
+
+    assert factory.log[1]["format"] is not None
+    assert "DECISION:" not in factory.log[1]["input"][0][1]
 
 
 def test_math_route_skips_retrieval(settings: Settings, index: BM25Index) -> None:

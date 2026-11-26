@@ -245,7 +245,7 @@ def _compile_graph(
     """노드와 간선을 조립해 컴파일한다. 문항 사이에 재사용한다.
 
     Args:
-        settings: 설정 (`retrieval.k`, `compress.*`)
+        settings: 설정 (`retrieval.k`, `compress.*`, `judge.format`)
         components: 부품 켜기/끄기
         hooks: 조건부 부품이 붙을 자리
         index: 코퍼스 BM25 색인
@@ -328,6 +328,7 @@ def _compile_graph(
             "\n\n".join(state.get("contexts", [])),
             allow_retrieve=allow_retrieve,
             allow_abstain=components.judge,
+            output_format=settings.judge.format,  # type: ignore[arg-type]
         )
         if judgment is None:  # 호출 예산 소진: 답을 만들지 못했다 (기권이 아니다).
             return {"answer": "", "retrieve": False}
