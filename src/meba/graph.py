@@ -143,7 +143,11 @@ class ConditionalHooks:
 
     choose_m: 동적 압축량(C). `(question, 기본 m) -> 이번 압축에서 남길 m`
     ledger: 근거 장부 상세화(C). RETRIEVE 뒤 `(question, 빠진 정보) -> 후속 검색어 재료`
-    concise: 간결 출력(D). 모델 호출 직전 `(단계 이름, 모델 입력) -> 모델 입력`
+        (현재는 자리 확보용이며 C-5에서 필요 시 시그니처를 확장한다)
+    concise: 간결 출력(D). 모델 호출 직전 `(단계 이름, 모델 입력) -> 모델 입력`.
+        `step`이 `"router"`·`"finalize"`일 때는 `list[dict[str, Any]]`(`{"role", "content", ...}`),
+        `"judge"`일 때는 `list[tuple[str, str]]`(`("system" | "human", content)`)이 넘어오므로
+        훅 구현은 두 메시지 형식을 모두 처리해야 한다 (INTERFACES §7.1).
     """
 
     choose_m: Optional[Callable[[str, int], int]] = None
