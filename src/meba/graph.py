@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -33,7 +33,7 @@ from src.config.settings import Settings, get_settings
 from src.eval.scorer import UNANSWERABLE, is_abstained
 from src.meba.budget import BudgetedLLM
 from src.meba.compress import compress, full_paragraphs
-from src.meba.judge import judge
+from src.meba.judge import OutputFormat, judge
 from src.meba.loop_breaker import LoopBreaker
 from src.meba.requery import Requery, search_args_key
 from src.meba.router import route_question
@@ -328,7 +328,7 @@ def _compile_graph(
             "\n\n".join(state.get("contexts", [])),
             allow_retrieve=allow_retrieve,
             allow_abstain=components.judge,
-            output_format=settings.judge.format,  # type: ignore[arg-type]
+            output_format=cast(OutputFormat, settings.judge.format),  # 값은 설정을 읽을 때 이미 검증됨
         )
         if judgment is None:  # 호출 예산 소진: 답을 만들지 못했다 (기권이 아니다).
             return {"answer": "", "retrieve": False}

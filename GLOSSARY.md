@@ -74,6 +74,10 @@ _Avoid_: 검증, 평가, 리랭킹
 **판정**:
 근거 판정의 결과값. ANSWER, RETRIEVE, ABSTAIN 셋 중 하나다.
 
+**판정 형식**:
+근거 판정 호출이 출력을 내는 방식. 설정 `judge.format`이 정한다. `json`(기본, 서술을 맨 앞에 둔 구조화 출력, ADR-0004)과 `tag`(대조군: 자유 서술 + 마지막 줄 `DECISION:`·`MISSING:`·`ANSWER:` 태그)가 있다.
+_Avoid_: 포맷 (코드·설정 이름 `format`은 그대로)
+
 **ANSWER**:
 근거가 충분해 답을 내는 판정.
 

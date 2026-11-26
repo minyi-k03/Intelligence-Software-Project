@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import zlib
 from dataclasses import fields
@@ -22,7 +23,7 @@ import pytest
 pytest.importorskip("langgraph")
 
 from src.common.types import PipelineResult  # noqa: E402
-from src.config.settings import REPO_ROOT, load_settings  # noqa: E402
+from src.config.settings import REPO_ROOT, JudgeConfig, load_settings  # noqa: E402
 from src.eval.runner import run_round  # noqa: E402
 from src.meba.graph import build_m  # noqa: E402
 from src.meba.router import ROUTER_SYSTEM_PROMPT  # noqa: E402
@@ -38,6 +39,9 @@ LOG_META_FIELDS = {
     "gold", "em", "f1", "numeric_correct", "correct", "timeout", "latency_s", "max_input_tokens",
     "evidence_kept", "is_warmup",
 }
+
+
+_ANSWER, _RETRIEVE, _ABSTAIN = "ANSWER", "RETRIEVE", "ABSTAIN"
 
 
 class _FakeSampler:
@@ -70,15 +74,22 @@ class _Model:
             digits = sum(ch.isdigit() for ch in human_text)
             return "ROUTE: math\nFinal answer: 42" if digits >= 4 else "ROUTE: search"
         question = human_text.split("\n\nEvidence:")[0].removeprefix("Question: ")
-        bucket = zlib.crc32(question.encode()) % 3
-        schema = self.kwargs.get("format_schema")
-        can_retrieve = schema is None or "RETRIEVE" in schema["properties"]["decision"]["enum"]
-        if bucket == 1 and can_retrieve:
-            word = max(question.split(), key=len)
-            return json.dumps({"reasoning": "a fact is missing", "decision": "RETRIEVE",
-                               "missing": f"{word} history", "answer": ""})
-        decision, answer = ("ABSTAIN", "") if bucket == 2 else ("ANSWER", "some answer")
-        return json.dumps({"reasoning": "ok", "decision": decision, "missing": "", "answer": answer})
+        schema = self.kwargs.get("format_schema")  # json 형식이면 스키마가 있고, tag 형식이면 없다
+        if schema is None:
+            can_retrieve = "RETRIEVE" in system.split("DECISION: <one of ")[1].split(">")[0]
+        else:
+            can_retrieve = "RETRIEVE" in schema["properties"]["decision"]["enum"]
+        outcome = (_ANSWER, _RETRIEVE, _ABSTAIN)[zlib.crc32(question.encode()) % 3]
+        if outcome == _RETRIEVE and can_retrieve:
+            decision, missing, answer = _RETRIEVE, f"{max(question.split(), key=len)} history", ""
+        elif outcome == _ABSTAIN:
+            decision, missing, answer = _ABSTAIN, "", ""
+        else:
+            decision, missing, answer = _ANSWER, "", "some answer"
+        if schema is None:
+            return (f"The evidence was weighed.\nDECISION: {decision}\n"
+                    f"MISSING: {missing or 'NONE'}\nANSWER: {answer or 'NONE'}")
+        return json.dumps({"reasoning": "ok", "decision": decision, "missing": missing, "answer": answer})
 
     def invoke(self, model_input: Any, **kwargs: Any) -> SimpleNamespace:
         self.seen.append(json.dumps(model_input, ensure_ascii=False, default=str))
@@ -98,8 +109,21 @@ class _Model:
         return SimpleNamespace(content=text, tool_calls=[])
 
 
-def _run(tmp_path: Path, seen: list[str]) -> list[dict[str, Any]]:
-    settings = load_settings("configs/default.yaml")
+def _run_dev_round(
+    runs_dir: Path, seen: list[str], *, judge_format: str = "json", limit: int | None = None
+) -> list[dict[str, Any]]:
+    """M을 개발 세트에 한 라운드 돌리고 `m.jsonl`의 줄을 읽어 돌려준다.
+
+    Args:
+        runs_dir: 결과 폴더 (테스트 임시 폴더)
+        seen: 모델에 간 입력을 모으는 리스트
+        judge_format: 설정 `judge.format` 값 (`json` | `tag`)
+        limit: 앞에서부터 이 수만큼만 돈다 (중단된 세션 흉내)
+
+    Returns:
+        로그 줄 리스트
+    """
+    settings = dataclasses.replace(load_settings("configs/default.yaml"), judge=JudgeConfig(format=judge_format))
 
     def factory(**kwargs: Any) -> _Model:
         return _Model(kwargs["callbacks"][0], kwargs, seen)
@@ -107,20 +131,22 @@ def _run(tmp_path: Path, seen: list[str]) -> list[dict[str, Any]]:
     meta = run_round(
         bundle="dev", round_name="r1", item_set="dev", settings=settings,
         pipelines={"m": build_m(settings, llm_factory=factory)},
-        frozen_dir=FROZEN, readme_path=README, runs_dir=tmp_path,
-        environment=ENV, sampler_factory=_FakeSampler, drain_s=2,
+        frozen_dir=FROZEN, readme_path=README, runs_dir=runs_dir,
+        environment=ENV, sampler_factory=_FakeSampler, drain_s=2, limit=limit,
     )
-    assert meta["settings"]["judge"] == {"format": "json"}
-    path = tmp_path / "dev" / "r1" / "m.jsonl"
+    assert meta["settings"]["judge"] == {"format": judge_format}
+    path = runs_dir / "dev" / "r1" / "m.jsonl"
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-@pytest.fixture(scope="module")
-def smoke(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, list[dict[str, Any]], list[str]]:
-    """M을 개발 세트 전체에 한 번 돌린 결과 (모듈 안에서 공유)."""
-    tmp = tmp_path_factory.mktemp("runs")
+@pytest.fixture(scope="module", params=["json", "tag"])
+def smoke(
+    request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
+) -> tuple[Path, list[dict[str, Any]], list[str]]:
+    """M을 개발 세트 전체에 한 번 돌린 결과. 판정 형식(json·tag)마다 한 번씩 (모듈 안에서 공유)."""
+    tmp = tmp_path_factory.mktemp(f"runs-{request.param}")
     seen: list[str] = []
-    return tmp, _run(tmp, seen), seen
+    return tmp, _run_dev_round(tmp, seen, judge_format=request.param), seen
 
 
 def test_m_finishes_the_whole_dev_set_without_errors(smoke) -> None:
@@ -184,5 +210,20 @@ def test_the_model_never_sees_the_question_type_or_qid(smoke) -> None:
 def test_rerunning_the_same_round_resumes_without_new_rows(smoke) -> None:
     """끝난 라운드를 다시 돌려도 로그가 그대로다 (이어 돌기)."""
     tmp, rows, _ = smoke
+    meta = json.loads((tmp / "dev" / "r1" / "RUN_META.json").read_text(encoding="utf-8"))
+    judge_format = meta["settings"]["judge"]["format"]  # 같은 조건이어야 이어 돌 수 있다
 
-    assert _run(tmp, []) == rows
+    assert _run_dev_round(tmp, [], judge_format=judge_format) == rows
+
+
+def test_an_interrupted_round_continues_where_it_stopped(tmp_path: Path) -> None:
+    """앞 10문항만 돈 뒤 같은 라운드를 이어 돌리면, 이미 쓴 줄은 그대로 두고 나머지 50문항만 더한다."""
+    first_session = _run_dev_round(tmp_path, [], limit=10)
+    seen: list[str] = []
+
+    rows = _run_dev_round(tmp_path, seen)
+
+    assert [r["order_idx"] for r in rows] == list(range(60))
+    assert rows[:10] == first_session
+    assert {r["session_idx"] for r in rows[:10]} == {0} and {r["session_idx"] for r in rows[10:]} == {1}
+    assert len(seen) == sum(len(r["calls"]) for r in rows[10:])  # 모델은 남은 50문항에만 불렸다
