@@ -1,0 +1,26 @@
+# D-3 P1 개발 세트 재측정. B-4 RUN_META의 설정을 별도 파일로 보존한다.
+# 이후 공통 프롬프트가 바뀌었으므로 B-4와는 별도 개발 라운드로 기록한다.
+model:
+  tag: "qwen2.5:7b-instruct-q4_K_M"
+  temperature: 0
+  num_ctx: 8192
+  keep_alive: -1
+budget:
+  max_calls: 4
+  max_requery: 2
+cap:
+  first: 512
+  finalize: 128
+  judge: 256
+  retry_multiplier: 2
+retrieval:
+  k: 5
+compress:
+  m: 7
+  window: 1
+p1:
+  max_steps: 7
+run:
+  timeout_s: 120
+data:
+  seed: 20261113

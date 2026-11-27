@@ -111,6 +111,7 @@ def run_p1(
     agent_factory: Optional[Callable[..., Any]] = None,
     corpus_path: Optional[str | Path] = None,
     base_url: Optional[str] = None,
+    trace_callback: Optional[Any] = None,
 ) -> PipelineResult:
     """Run the P1 ReAct baseline using ``create_agent`` and two shared tools.
 
@@ -122,6 +123,8 @@ def run_p1(
         agent_factory: Optional ``create_agent``-compatible factory (override in tests).
         corpus_path: Optional path to ``corpus.jsonl``.
         base_url: Optional Ollama endpoint URL override.
+        trace_callback: Optional development audit callback. It observes model
+            outputs without changing the shared PipelineResult or model prompt.
 
     Returns:
         Standardized ``PipelineResult``.
@@ -160,11 +163,16 @@ def run_p1(
 
         # In LangGraph, each ReAct step uses 2 graph steps (model -> tools) + 1 final model step.
         recursion_limit = 2 * cfg.p1.max_steps + 1
+        callbacks = [callback]
+        if trace_callback is not None:
+            callbacks.append(trace_callback)
         agent_output = agent.invoke(
             {"messages": [{"role": "user", "content": clean_question}]},
-            config={"callbacks": [callback], "recursion_limit": recursion_limit},
+            config={"callbacks": callbacks, "recursion_limit": recursion_limit},
         )
         raw_text = _extract_last_ai_text(agent_output)
+        if trace_callback is not None:
+            trace_callback.raw_final_output = raw_text
         return build_baseline_result(
             raw_text,
             callback,
