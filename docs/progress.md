@@ -1,7 +1,7 @@
 # 진행 현황 (progress)
 
 > **기준 문서:** [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — 작업 단위·기한·선행 조건은 이 문서를 따른다. 여기서는 상태만 기록한다.
-> **전체 상태 기준:** 2026-11-20 (`main` @ `4e26682`). A가 `main` 머지 이력(PR #1~#14)과 열린 PR(#13, #15)을 기준으로 전체 상태 열을 맞췄다. 11/23에 D-3 분석과 그 선행 로그 상태를 갱신했다.
+> **전체 상태 기준:** 2026-11-27 (`main` @ `5bfd99d`). `main` 머지 이력(PR #1~#24, #27)과 진행 중인 PR B-5 브랜치를 기준으로 전체 상태를 최신화했다.
 
 ## 갱신 규칙
 
@@ -15,19 +15,18 @@
 | 구간 | 기간 | 상태 |
 |---|---|---|
 | 1주차 | 11/11 ~ 11/17 | 완료. 동결·설정·토크나이저·BM25·계산기·압축·예산·루프 끊기·채점기 머지 |
-| 2주차 | 11/18 ~ 11/24 | 11/20 기준 A-3(PR #14)·B-3(PR #13) 머지, A-4 완료(`YongMin`, PR 대기), D-2(PR #15) 리뷰 대기, B-4·C-3 미착수. 11/23 갱신: B-4 개발 로그 제출(`fde8dc7`), D-3에서 관측 가능한 지표 집계 |
-| 3주차 | 11/25 ~ 11/27 | 미착수 |
+| 2주차 | 11/18 ~ 11/24 | 완료. A-3(#14)·A-4(#18)·B-3(#13)·B-4(#21)·C-3(#20)·C-4(#23)·D-2(#15)·D-3(#22) 머지 |
+| 3주차 | 11/25 ~ 11/27 | 진행 중. A-5a·A-5b(#24, M v2 동결) 및 C-4 후속(#27) 머지 완료. B-5 노트북 작성·검증(`HyunSeong`, dev 리허설 진행). C-5·D-4·D-5 착수 가능 |
 | 측정 | 11/28 ~ 12/03 | 미착수 |
 | 마무리 | 12/04 | 미착수 |
 
-테스트: 전체 254개 통과 (2026-11-20, `pytest -q`, `main` @ `4e26682`)
+테스트: 전체 408개 통과 (2026-11-27, Colab `verify.ipynb` · `pytest -q tests`, `HyunSeong` @ `11a151d`)
 
 ## 지금 막혀 있는 것
 
 | 항목 | 기한 | 막고 있는 작업 | 담당 |
 |---|---|---|---|
-| TBD #6 라운드 간 결과가 다를 때 대표값 규칙 | 11/16 (지남) | PR D-2 | D (PR #15에서 "3라운드 다수결" 제안, 머지 대기) |
-| B-4 실행의 최종 응답 원문·도구 요청 이력 | 11/23 | D-3 형식 오류율·반복 루프 비율 산출. P1 개발 로그의 토큰 집계는 완료 | B·D (같은 실행의 추가 기록 확인 필요) |
+| B-4 실행의 최종 응답 원문·도구 요청 이력 (및 새 로그 `3acd6fb` 재집계) | 11/23 (지남) | D-3 형식 오류율·반복 루프 비율 확정 | B·D (표준 `PipelineResult` 로그 외 추가 기록 필요 시 별도 추출) |
 
 TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6과 [EVALUATION.md](EVALUATION.md) §3에 반영됐다.
 
@@ -41,7 +40,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | 7 | 의존성 파일·Python 버전 | ✅ | `requirements.txt` 한 곳에서 관리, Python 3.10+, `pyproject.toml`은 pytest 설정만 |
 | 4 | P0 기권 문구 | ✅ | P0에도 기권 문구를 넣는다. INTERFACES §6, EVALUATION §3.3 (`4ede049`) |
 | 5 | 답 추출 접두어·GSM8K 숫자 규칙 | ✅ | `Final answer:` 접두어, 마지막 숫자 규칙. EVALUATION §3.1·§3.2 (`4ede049`) |
-| 6 | 대표값 규칙 | 🔄 | PR #15: 문항별 3라운드 다수결 (INTERFACES §7.4, EVALUATION §5 제안) |
+| 6 | 대표값 규칙 | ✅ | PR #15: 문항별 3라운드 다수결 (INTERFACES §7.4, EVALUATION §5, `f0114a6`) |
 | - | 스켈레톤 커밋 | ✅ | `c9335bb` + `data/frozen/.gitkeep` |
 | - | 브랜치 이름 규칙 | ✅ | 각자 영문 이름 (`YongMin`, `HyunSeong`, `HwanHo`) |
 | - | `main` 보호 설정, 팀원 초대 | ❓ | GitHub 설정이라 저장소로 확인 불가 |
@@ -59,7 +58,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR A-3 로거·VRAM·러너 | 11/19 | ✅ | `src/eval/{vram,logger,runner}.py`, `scripts/run_eval.py`, `tests/test_eval_io.py`·`tests/test_runner.py`·`tests/test_run_eval.py` (PR #14). Antigravity 교차 검증(11/20, CPU 전용 환경) 지적 반영 완료. 파이프라인 등록(`PIPELINE_FACTORIES`)은 `"모듈:함수"`(생성 함수)와 `"call:모듈:함수"`(B-3의 `run_p0(qid, question, *, settings)` 형태) 두 형식을 받는다. M은 A-5b가 채운다. 실환경 검증 완료(11/20, Colab T4 + Ollama `qwen2.5:7b-instruct-q4_K_M`): 테스트 262개 통과, `--verify`로 로그 필드·이어 돌기·`RUN_META.json` 확인, `data/frozen` 무변경 |
 | PR A-4 라우터 | 11/20 | ✅ | `src/meba/router.py`, `tests/test_router.py`. `route_question(question, budget) -> RouterOutcome`. 첫 줄 `ROUTE: math\|search`, `ROUTE:` 줄이 없으면 계산기 호출 시 `math`·그 밖에는 `search`(직답 경로 없음). 계산기를 쓰면 마무리 호출(`cap.finalize`). 교차 리뷰 반영 완료. 실모델 검증(11/21, Colab T4, 개발 세트 60문항): 경로 59/60, 직답 경로 0/40, GSM8K 수학 경로 17/20, 잘림 0건([기록](experiments/2026-11-21-a-router-dev.md)). Ollama 반복 중단 오류 1건은 D에 공유 |
 | PR A-5a 그래프 골격 | 11/23 | ✅ | `src/meba/graph.py`, `tests/test_graph.py`. `router`→`math`/`search`→`compress`→`judge`↔`requery` 그래프, `build_m(settings)`·`build_variant("m_minus_<부품>")`, 핵심 6개 on/off(`MComponents`)와 조건부 3개 자리(`ConditionalHooks`: `choose_m`·`ledger`·`concise`, 기본 꺼짐, 켜고 함수가 없으면 만들 때 실패). `run_eval.py`에 `m_minus_*` 6개 등록. 절제 스위치를 위해 `budget.py`(`enforce_caps`)·`router.py`(`use_loop_breaker`)에 옵션 추가(D·A 모듈, 기본값은 기존 동작). 가짜 모델 테스트 42건 추가, 실제 코퍼스·가짜 모델 스모크 확인. 실제 Ollama 실행과 판정 포맷 설정화는 A-5b |
-| PR A-5b M 통합 | 11/25 | 🔄 | **11/26 실모델 dev 완주(`r2`): 60/60, 오류·시간 초과·예산 소진·잘림·파싱 실패 0.** 정확도 0.483(P1 0.35), 호출 2.32(P1 1.75, 가설 틀림), 시간 5.81s(P1 9.02s, P1 시간 초과 4건 영향), 과잉 기권 0.38. 원인은 근거 판정(답 있는 검색 문항 30개 중 24개는 1차 근거에 정답이 있는데 정답 5개) → 판정 지시문 v2(C 모듈 `judge.py`, `r3`): 정답 31/60, 과잉 기권 0.18, 호출 1.90이지만 SQuAD 답할 수 없음 7→4로 채택 기준 미달 → v3(`r4`): 정답 29, 호출 1.78, 답할 수 없음 4로 역시 미달·기각. 지시문은 기권 임계값만 옮기고 판별력은 늘리지 못함 → 튜닝 중단, **팀 결정으로 v2 동결**(`judge.py`를 `9d8f0a4` 지시문으로 복원). **동결 M(v2)과 P1을 같은 세션에서 돌린 `r6`(최종 dev 수치):** M 정답 31 vs P1 22, 정확도 Δ +0.150 [+0.017, +0.283](McNemar p = 0.049), 호출 ×1.07 [×0.94, ×1.22] 판단 불가, 시간은 평균 ×0.55 [×0.29, ×1.37]·중앙값 ×1.34로 지지되지 않음(P1 시간 초과 4건을 빼면 M이 평균 ×1.98 느림, 정확도 Δ도 +0.125 p = 0.118로 약해짐). 이득은 GSM8K(17 vs 10, p = 0.016)에서만 확인되고 검색 문항 40개만 보면 M과 P1은 구분되지 않음(14 vs 12, p = 0.754). M v2의 r6 답은 r3와 60/60 같아 재현 확인. `r5`의 M은 `git pull` 실패로 v3로 돌아 분석에서 제외, P1은 유효. B1 진단(로컬): 답 있는 검색 문항 30개 중 압축에서 정답이 잘린 것은 1개, 검색 누락 4개는 두 번째 정답 문서가 10~19위라 `k` 확대는 비현실적이고 그중 3개는 재검색 없이 바로 기권 → 압축 확대는 접고 `ledger`(C-5)가 시험할 근거. **절제 `r7`(dev, 같은 세션):** 라우터를 빼면 GSM8K 17 → 2, 정답 30 → 16(Δ +0.233 [+0.117, +0.350], p = 0.001)으로 정확도 이득의 원인은 수학 경로. 재검색·ABSTAIN·압축은 정확도 기여를 입증하지 못했고 비용 쪽 효과(ABSTAIN 호출 −18%·시간 −20%, 압축 입력 토큰 −20%). 같은 코드의 M이 r7에서 r3·r6와 2문항 달라 결정성이 "대부분 같고 드물게 다름"으로 정정(M v2 dev 정답 30~31). 로그 `results/runs/dev/r2~r7` 커밋. [기록](experiments/2026-11-26-a-m-dev-judge-prompt.md). 코드·가짜 모델 검증 완료. A-5a 시점에 `graph.py`가 이미 실제 `compress`·`judge`·`requery`를 쓰고 있어 교체할 stub은 없었다. 이번 PR: ① 설정 `judge.format`(`json` 기본, `tag` 대조군, 그 밖은 `ValueError`) 추가 → `INTERFACES §2·§5`, `configs/default.yaml`, `src/config/settings.py`(`JudgeConfig`, B 모듈), `graph.py`가 판정 호출에 전달. ② `tests/test_m_dev_smoke.py`: 실제 코퍼스·dev 60문항·러너·해시 검증으로 M을 가짜 모델에 돌려 로그 필드·호출 예산·경로·이어 돌기·"모델에 유형/qid 안 감"을 확인. ③ `notebooks/verify_a5b.ipynb`: Colab에서 `--verify 3` → dev 60문항(`r2`) → 요약·P1 비교. **주의:** 설정 스냅샷에 `judge`가 생겨 B-4의 `results/runs/dev/r1`(P1)에는 이어 돌 수 없다 → M은 `r2`로 돈다. 남은 일: 조건부 부품(`ledger` 등) 시험 여부 결정. **후속 주의:** (1) 본 측정·dev 리허설은 4개 파이프라인이 같은 설정 스냅샷으로 한 라운드를 돌아야 하므로, `judge` 섹션 이전 설정으로 쌓인 `dev/r1`의 P1 로그는 비교용 참고로만 쓰고 리허설에서 P0·P0-raw·P1을 새 라운드로 다시 돈다(B-5). (2) 계획의 "11/25까지 A-5b가 dev 완주 못 하면 조건부 부품 실험 건너뛰기" 규칙을 적용할지는 Colab 완주 결과를 보고 팀이 정한다(C-5·D-5 실험이 A-5b에 의존). |
+| PR A-5b M 통합 | 11/25 | ✅ | **PR #24(`a57d1dd`)로 `main` 머지 완료 (선행 완료 → C-5·D-4·D-5·B-5 착수 가능).**  **11/26 실모델 dev 완주(`r2`): 60/60, 오류·시간 초과·예산 소진·잘림·파싱 실패 0.** 정확도 0.483(P1 0.35), 호출 2.32(P1 1.75, 가설 틀림), 시간 5.81s(P1 9.02s, P1 시간 초과 4건 영향), 과잉 기권 0.38. 원인은 근거 판정(답 있는 검색 문항 30개 중 24개는 1차 근거에 정답이 있는데 정답 5개) → 판정 지시문 v2(C 모듈 `judge.py`, `r3`): 정답 31/60, 과잉 기권 0.18, 호출 1.90이지만 SQuAD 답할 수 없음 7→4로 채택 기준 미달 → v3(`r4`): 정답 29, 호출 1.78, 답할 수 없음 4로 역시 미달·기각. 지시문은 기권 임계값만 옮기고 판별력은 늘리지 못함 → 튜닝 중단, **팀 결정으로 v2 동결**(`judge.py`를 `9d8f0a4` 지시문으로 복원). **동결 M(v2)과 P1을 같은 세션에서 돌린 `r6`(최종 dev 수치):** M 정답 31 vs P1 22, 정확도 Δ +0.150 [+0.017, +0.283](McNemar p = 0.049), 호출 ×1.07 [×0.94, ×1.22] 판단 불가, 시간은 평균 ×0.55 [×0.29, ×1.37]·중앙값 ×1.34로 지지되지 않음(P1 시간 초과 4건을 빼면 M이 평균 ×1.98 느림, 정확도 Δ도 +0.125 p = 0.118로 약해짐). 이득은 GSM8K(17 vs 10, p = 0.016)에서만 확인되고 검색 문항 40개만 보면 M과 P1은 구분되지 않음(14 vs 12, p = 0.754). M v2의 r6 답은 r3와 60/60 같아 재현 확인. `r5`의 M은 `git pull` 실패로 v3로 돌아 분석에서 제외, P1은 유효. B1 진단(로컬): 답 있는 검색 문항 30개 중 압축에서 정답이 잘린 것은 1개, 검색 누락 4개는 두 번째 정답 문서가 10~19위라 `k` 확대는 비현실적이고 그중 3개는 재검색 없이 바로 기권 → 압축 확대는 접고 `ledger`(C-5)가 시험할 근거. **절제 `r7`(dev, 같은 세션):** 라우터를 빼면 GSM8K 17 → 2, 정답 30 → 16(Δ +0.233 [+0.117, +0.350], p = 0.001)으로 정확도 이득의 원인은 수학 경로. 재검색·ABSTAIN·압축은 정확도 기여를 입증하지 못했고 비용 쪽 효과(ABSTAIN 호출 −18%·시간 −20%, 압축 입력 토큰 −20%). 같은 코드의 M이 r7에서 r3·r6와 2문항 달라 결정성이 "대부분 같고 드물게 다름"으로 정정(M v2 dev 정답 30~31). 로그 `results/runs/dev/r2~r7` 커밋. [기록](experiments/2026-11-26-a-m-dev-judge-prompt.md). 코드·가짜 모델 검증 완료. A-5a 시점에 `graph.py`가 이미 실제 `compress`·`judge`·`requery`를 쓰고 있어 교체할 stub은 없었다. 이번 PR: ① 설정 `judge.format`(`json` 기본, `tag` 대조군, 그 밖은 `ValueError`) 추가 → `INTERFACES §2·§5`, `configs/default.yaml`, `src/config/settings.py`(`JudgeConfig`, B 모듈), `graph.py`가 판정 호출에 전달. ② `tests/test_m_dev_smoke.py`: 실제 코퍼스·dev 60문항·러너·해시 검증으로 M을 가짜 모델에 돌려 로그 필드·호출 예산·경로·이어 돌기·"모델에 유형/qid 안 감"을 확인. ③ `notebooks/verify_a5b.ipynb`: Colab에서 `--verify 3` → dev 60문항(`r2`) → 요약·P1 비교. **주의:** 설정 스냅샷에 `judge`가 생겨 B-4의 `results/runs/dev/r1`(P1)에는 이어 돌 수 없다 → M은 `r2`로 돈다. 남은 일: 조건부 부품(`ledger` 등) 시험 여부 결정. **후속 주의:** (1) 본 측정·dev 리허설은 4개 파이프라인이 같은 설정 스냅샷으로 한 라운드를 돌아야 하므로, `judge` 섹션 이전 설정으로 쌓인 `dev/r1`의 P1 로그는 비교용 참고로만 쓰고 리허설에서 P0·P0-raw·P1을 새 라운드로 다시 돈다(B-5). (2) 계획의 "11/25까지 A-5b가 dev 완주 못 하면 조건부 부품 실험 건너뛰기" 규칙을 적용할지는 Colab 완주 결과를 보고 팀이 정한다(C-5·D-5 실험이 A-5b에 의존). |
 
 ### B · 이현성
 
@@ -70,7 +69,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR B-2b BM25 검색·계산기 | 11/16 | ✅ | `src/tools/{bm25_search,calculator,__init__}.py`, `tests/test_tools.py` (PR #9) |
 | PR B-3 P0·P0-raw·P1 | 11/18 | ✅ | `src/baselines/{prompts,p0,p1_react,__init__}.py`, `tests/test_baselines.py` (PR #13) |
 | 실험 B-4 `k` 확정·P1 dev 로그 | 11/20 | ✅ | [기록](experiments/2026-11-21-b-retrieval-k.md), `scripts/measure_retrieval_k.py`, `configs/default.yaml` (`k=5, m=7`), `results/runs/dev/r1/p1.jsonl` (`3acd6fb`) |
-| PR B-5 Colab 노트북 (A에서 이관 제안) | 11/26 | ⬜ | 이관은 팀 확인 필요 |
+| PR B-5 Colab 노트북 (A에서 이관) | 11/26 | 🔄 | `HyunSeong` 브랜치 진행 중: `notebooks/run_all.ipynb`·`notebooks/verify.ipynb` 작성 및 `--verify 3` 검증 통과, dev 리허설(`r8`) 진행 중 |
 
 ### C · 조환호
 
@@ -79,18 +78,18 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | PR C-1 문장 창 압축 | 11/17 | ✅ | `src/meba/compress.py`, `tests/test_compress.py` (PR #4) |
 | 실험 C-2 `k`×`m` 측정 | 11/19 | ✅ | [기록](experiments/2026-11-15-c-compress-m.md), `scripts/measure_compress_m.py`. 권장 m: k=3 → 6, k=5 → 7, k=8 → 10 |
 | PR C-3 근거 판정·재검색 | 11/23 | ✅ | `src/meba/judge.py`, `src/meba/requery.py`, `tests/test_judge.py`, `tests/test_requery.py`. 가짜 모델로 검증, 실제 Ollama 확인은 통합(A-5b)·C-4에서 |
-| 실험 C-4 JSON vs 태그 | 11/25 | ✅ | [기록](experiments/2026-11-23-c-judge-format.md), `scripts/compare_judge_format.py`. JSON 유지 (잘림·파싱 실패 모두 0%, 정확도 30% 동일). 근거 판정 과잉 기권이 커서 프롬프트 후속 작업 필요 |
-| PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | |
+| 실험 C-4 JSON vs 태그 | 11/25 | ✅ | [기록](experiments/2026-11-23-c-judge-format.md), `scripts/compare_judge_format.py`. JSON 유지 (잘림·파싱 실패 모두 0%, 정확도 30% 동일). 후속 판정 프롬프트 수정안 시험 후 기각·v2 유지([기록](experiments/2026-11-24-c-judge-prompt.md), PR #27 머지) |
+| PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | 선행 `PR A-5a`·`A-5b` ✅ 완료 (PR #24) — 착수 가능 |
 
 ### D · 심동섭
 
 | 작업 | 기한 | 상태 | 근거 · 비고 |
 |---|---|---|---|
 | PR D-1 출력 상한·예산·루프 끊기 | 11/17 | ✅ | `src/meba/{budget,loop_breaker}.py`, `tests/test_budget.py`·`tests/test_loop_breaker.py` (PR #10) |
-| PR D-2 결과표·McNemar | 11/20 | 🔄 | PR #15 리뷰 대기 (`Dongsub`). `src/eval/{tables,stats}.py`, `scripts/build_tables.py` |
-| 분석 D-3 P1 로그 분석 | 11/23 | 🔄 | [B-4 개발 로그 60문항 분석](experiments/2026-11-23-d-p1-log-audit.md). 기록 출력 비중 4.782%. 형식 오류율·반복 루프 비율은 원문·도구 인자 미기록으로 산출 불가 |
-| 실험 D-4 `cap.judge` 민감도 | 11/27 | ⬜ | 선행 A-5b |
-| PR D-5 조건부 `concise` | 11/27 | ⬜ | |
+| PR D-2 결과표·McNemar | 11/20 | ✅ | `src/eval/{tables,stats}.py`, `scripts/build_tables.py` (PR #15 머지, `f0114a6`; 이슈 #17 2건 후속 확인) |
+| 분석 D-3 P1 로그 분석 | 11/23 | 🔄 | [B-4 개발 로그 60문항 분석](experiments/2026-11-23-d-p1-log-audit.md) (PR #22 머지). 기록 출력 비중 4.782%. 새 로그(`3acd6fb`, 21/60) 재집계 및 원문·도구 인자 추가 수집 여부 B·D 확인 중 |
+| 실험 D-4 `cap.judge` 민감도 | 11/27 | ⬜ | 선행 `PR A-5b` ✅ 완료 (PR #24) — 착수 가능 |
+| PR D-5 조건부 `concise` | 11/27 | ⬜ | 선행 `PR A-5a`·`A-5b` ✅ 완료 (PR #24, `ConditionalHooks.concise` 자리 확보) — 착수 가능 |
 
 ## 본 측정 및 마무리
 
