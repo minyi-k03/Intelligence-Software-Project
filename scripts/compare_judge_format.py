@@ -4,6 +4,8 @@
     python -m scripts.compare_judge_format              # 두 형식 모두. 끊기면 같은 명령으로 이어 돈다
     python -m scripts.compare_judge_format --limit 3    # 앞 3문항만 (동작 확인용)
     python -m scripts.compare_judge_format --summarize  # 저장된 로그로 표만 다시 만든다
+    python -m scripts.compare_judge_format --formats json --out-dir results/runs/dev/x \
+        --compare base=results/runs/dev/a new=results/runs/dev/b      # 두 실행을 나란히 비교
 
 그래프(A-5a)가 아직 없으므로 검색 경로를 여기서 직접 잇는다:
 검색 → 압축 → 근거 판정 → (RETRIEVE면) 후속 검색어로 재검색 → 압축 → 근거 판정 …
@@ -299,6 +301,30 @@ def read_log(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in f if line.strip()]
 
 
+def parse_compare(specs: Sequence[str], fmt: str) -> list[tuple[str, Path]]:
+    """`이름=폴더` 목록을 (이름, 그 폴더의 `<형식>.jsonl` 경로)로 바꾼다.
+
+    Args:
+        specs: `NAME=DIR` 문자열들
+        fmt: 비교할 형식 (`json` 또는 `tag`)
+
+    Returns:
+        (이름, 로그 경로) 리스트. 순서는 입력 순서
+
+    Raises:
+        SystemExit: `=`가 없거나 이름이 겹칠 때
+    """
+    pairs: list[tuple[str, Path]] = []
+    for spec in specs:
+        name, sep, folder = spec.partition("=")
+        if not sep or not name or not folder:
+            raise SystemExit(f"--compare 값은 NAME=DIR 형식이어야 한다: {spec!r}")
+        if name in {n for n, _ in pairs}:
+            raise SystemExit(f"--compare 이름이 겹친다: {name!r}")
+        pairs.append((name, Path(folder) / f"{fmt}.jsonl"))
+    return pairs
+
+
 def main() -> None:
     """두 형식을 개발 세트 검색형 문항에 돌리고(이어 돌기 지원) 요약 표를 쓴다."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -306,10 +332,16 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="앞에서 N문항만 (확인용)")
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     parser.add_argument("--summarize", action="store_true", help="실행하지 않고 저장된 로그로 표만 만든다")
+    parser.add_argument(
+        "--compare",
+        nargs="+",
+        metavar="NAME=DIR",
+        help="실행하지 않고 여러 실행 폴더의 같은 형식 로그를 나란히 비교한다 (예: base=dir1 new=dir2)",
+    )
     args = parser.parse_args()
 
     out_dir = args.out_dir if args.out_dir.is_absolute() else REPO_ROOT / args.out_dir
-    if not args.summarize:
+    if not args.summarize and not args.compare:
         hashes = verify_frozen_hashes(REPO_ROOT / "data/frozen", REPO_ROOT / "data/README.md")
         settings = get_settings()
         items = search_items(load_items(REPO_ROOT / DEV_PATH))[: args.limit]
@@ -340,6 +372,14 @@ def main() -> None:
                 )
         meta.finish(vram_by_pipeline={})
 
+    if args.compare:
+        fmt = args.formats[0]
+        logs = {name: read_log(path if path.is_absolute() else REPO_ROOT / path) for name, path in parse_compare(args.compare, fmt)}
+        table = render_summary(logs)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"compare_{fmt}.md").write_text(table + "\n", encoding="utf-8")
+        print(table)
+        return
     logs = {fmt: read_log(out_dir / f"{fmt}.jsonl") for fmt in args.formats}
     table = render_summary(logs)
     (out_dir / "summary.md").write_text(table + "\n", encoding="utf-8")

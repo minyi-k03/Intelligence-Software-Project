@@ -220,3 +220,26 @@ def test_logs_without_run_meta_refuse_to_resume(monkeypatch: pytest.MonkeyPatch,
     (tmp_path / "json.jsonl").write_text(json.dumps({"qid": "x"}) + "\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, tmp_path, get_settings())
+
+
+def test_parse_compare() -> None:
+    assert c4.parse_compare(["base=a/b", "new=c"], "json") == [("base", Path("a/b/json.jsonl")), ("new", Path("c/json.jsonl"))]
+    for bad in (["base"], ["=a"], ["base="], ["x=a", "x=b"]):
+        with pytest.raises(SystemExit):
+            c4.parse_compare(bad, "json")
+
+
+def test_compare_mode_pairs_two_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    base, new = tmp_path / "base", tmp_path / "new"
+    for folder, answers in ((base, ["Plato", "Plato"]), (new, ["Aristotle", "Plato"])):
+        folder.mkdir()
+        rows = [
+            run([j("ANSWER", a)], item={**ITEM, "qid": f"hotpotqa-99{i}"}, order_idx=i)[0]
+            for i, a in enumerate(answers)
+        ]
+        (folder / "json.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["x", "--formats", "json", "--out-dir", str(tmp_path / "out"), "--compare", f"base={base}", f"new={new}"])
+    c4.main()
+    table = (tmp_path / "out" / "compare_json.md").read_text(encoding="utf-8")
+    assert "| 전체 | base | 2 | 0% |" in table and "| 전체 | new | 2 | 50% |" in table
+    assert "new만 정답 1" in table
