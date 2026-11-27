@@ -145,7 +145,26 @@ Ollama 구조화 출력(`format`에 JSON 스키마)을 씁니다. **키 순서�
 - 마지막 판정 호출에서는 스키마의 `decision` 값에서 `RETRIEVE`를 뺍니다.
 - 대조군: 같은 내용을 자유 텍스트 + 마지막 줄 태그(예: `DECISION: ANSWER`) + 정규식으로 받는 방식. 잘림률·파싱 실패율을 비교합니다.
 - M이 쓰는 형식은 설정 `judge.format`(§2)이 정합니다. 기본 `json`이고, `tag`로 바꾸면 모든 근거 판정 호출이 대조군 형식(구조화 출력 스키마 없음)으로 바뀝니다. 한 라운드 안에서는 바꿀 수 없습니다(설정 스냅샷이 달라지면 러너가 이어 돌기를 거부).
-- 조건부 부품 "근거 장부 상세화"는 이 스키마에 항목별 `FOUND` / `MISSING` 필드를 추가하는 방식으로 확장합니다 (TBD: C).
+- 조건부 부품 "근거 장부 상세화"(`MComponents.ledger`, 기본 꺼짐, dev에서 기각 → [기록](experiments/2026-11-26-c-conditional.md))를 켜면 스키마에 `ledger` 칸을 넣습니다. 끄면 위 스키마·프롬프트·파싱과 글자까지 같습니다. JSON 형식에서만 쓰고, `tag`에 켜면 `ValueError`입니다.
+
+```json
+{
+  "reasoning": "...",
+  "ledger": [
+    {"item": "a piece of information the question needs", "status": "FOUND | MISSING"}
+  ],
+  "decision": "ANSWER | RETRIEVE | ABSTAIN",
+  "missing": "...",
+  "answer": "..."
+}
+```
+
+  - 키 순서: `reasoning → ledger → decision → missing → answer`. 다섯 칸 모두 `required`이고, 항목의 `item`·`status`도 `required`, `status`는 `FOUND`·`MISSING` 열거형입니다.
+  - RETRIEVE의 빠진 정보(`Judgment.missing`)는 형식이 맞는 MISSING 항목을 `"; "`로 이은 것입니다. MISSING 항목이 없으면 모델이 쓴 `missing`을 씁니다. 재검색 한 번은 그 첫 항목만 검색어로 씁니다(`ConditionalHooks.ledger`).
+  - 파싱: `status`의 대소문자는 가리지 않습니다. 형식이 틀린 항목(객체가 아님, `item`이 빔, `status`가 FOUND/MISSING이 아님)은 버립니다.
+  - 장부 형식 오류는 `Judgment.ledger_ok = False`로 따로 표시합니다. 형식 오류란 JSON이 깨짐, `ledger` 칸이 없음, 배열이 아님, 형식이 틀린 항목이 하나라도 있음을 말합니다. 빈 배열은 형식 오류가 아닙니다. 장부를 끄면 항상 True입니다.
+  - `parse_ok`(판정·답 형식, 호출 로그의 `parse_ok`)와 판정·답은 장부 형식 오류로 바뀌지 않습니다. 장부는 재검색어를 고르는 보조 칸이라, 장부가 깨졌다고 맞게 쓴 판정·답을 형식 위반(ANSWER + 빈 답)으로 바꾸지 않습니다.
+  - `ledger_ok`는 문항 로그(§7)에 남기지 않습니다.
 
 ---
 

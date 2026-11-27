@@ -70,6 +70,9 @@ class Judgment:
     truncated: 재시도 뒤에도 출력 상한에 걸렸는가
     raw: 모델 출력 원문
     ledger: 근거 장부 상세화를 켰을 때의 (정보 항목, "FOUND" | "MISSING") 목록. 끄면 빈 튜플
+    ledger_ok: 장부를 켰을 때 `ledger` 칸이 약속한 형식이었는가 (칸이 배열이고 모든 항목이
+        비지 않은 `item`과 FOUND/MISSING `status`를 가짐). 장부를 끄면 항상 True.
+        `parse_ok`(판정·답 형식)와 따로 센다 — 장부가 깨져도 판정·답은 그대로 쓴다 (INTERFACES §5)
     """
 
     decision: Decision
@@ -80,6 +83,7 @@ class Judgment:
     truncated: bool
     raw: str
     ledger: tuple[LedgerItem, ...] = ()
+    ledger_ok: bool = True
 
     @property
     def abstained(self) -> bool:
@@ -221,19 +225,28 @@ def _parse_json_fields(raw: str) -> dict[str, str] | None:
     return {key: _clean(data.get(key)) for key in ("reasoning", "decision", "missing", "answer")}
 
 
-def _parse_ledger(raw: str) -> tuple[LedgerItem, ...]:
-    """JSON 출력에서 장부 항목을 꺼낸다. 없거나 깨진 항목은 건너뛴다."""
+def _parse_ledger(raw: str) -> tuple[tuple[LedgerItem, ...], bool]:
+    """JSON 출력에서 장부 항목을 꺼낸다.
+
+    Args:
+        raw: 모델 출력 원문
+
+    Returns:
+        (형식이 맞는 항목들, 장부 전체가 형식대로였는가). JSON이 깨졌거나 `ledger` 칸이 없거나
+        배열이 아니면 ((), False). 형식이 틀린 항목(객체가 아님, `item`이 비었음, `status`가
+        FOUND/MISSING이 아님)은 건너뛰고 형식 오류로 센다. `status`의 대소문자는 가리지 않는다.
+    """
     text = raw.strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
-        return ()
+        return (), False
     try:
         data = json.loads(text[start : end + 1])
     except json.JSONDecodeError:
-        return ()
+        return (), False
     entries = data.get("ledger") if isinstance(data, dict) else None
     if not isinstance(entries, list):
-        return ()
+        return (), False
     items: list[LedgerItem] = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -241,7 +254,7 @@ def _parse_ledger(raw: str) -> tuple[LedgerItem, ...]:
         item, status = _clean(entry.get("item")), _clean(entry.get("status")).upper()
         if item and status in ("FOUND", "MISSING"):
             items.append((item, status))
-    return tuple(items)
+    return tuple(items), len(items) == len(entries)
 
 
 def _blank_if_none(value: str) -> str:
@@ -292,7 +305,8 @@ def parse_judgment(
         output_format: 호출에 쓴 형식
         truncated: 출력이 상한에 걸렸는지 (그대로 결과에 싣는다)
         ledger: 근거 장부를 켰는지. 켜면 RETRIEVE의 빠진 정보를 장부의 MISSING 항목으로 정한다
-            (MISSING 항목이 없으면 모델이 쓴 `missing`을 쓴다)
+            (MISSING 항목이 없으면 모델이 쓴 `missing`을 쓴다). 장부 형식 오류는 `ledger_ok=False`로
+            표시할 뿐 `parse_ok`·판정·답을 바꾸지 않는다
 
     Returns:
         정리된 판정. ABSTAIN이면 `answer`는 "UNANSWERABLE"
@@ -314,7 +328,7 @@ def parse_judgment(
     elif is_abstained(answer):
         answer = UNANSWERABLE
 
-    items = _parse_ledger(raw) if ledger and output_format == "json" else ()
+    items, ledger_ok = _parse_ledger(raw) if ledger and output_format == "json" else ((), True)
     missing = fields["missing"]
     if decision == "RETRIEVE" and items:
         missing = "; ".join(item for item, status in items if status == "MISSING") or missing
@@ -328,6 +342,7 @@ def parse_judgment(
         truncated=truncated,
         raw=raw,
         ledger=items,
+        ledger_ok=ledger_ok,
     )
 
 

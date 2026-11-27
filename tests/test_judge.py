@@ -357,7 +357,7 @@ def test_retrieve_with_ledger_uses_missing_items() -> None:
         missing="something else",
     )
     j = parse_judgment(raw, allow_retrieve=True, ledger=True)
-    assert j.decision == "RETRIEVE" and j.parse_ok
+    assert j.decision == "RETRIEVE" and j.parse_ok and j.ledger_ok
     assert j.missing == "birthplace of Lewis Carroll; year of birth"
     assert j.ledger == (("author of Wonderland", "FOUND"), ("birthplace of Lewis Carroll", "MISSING"), ("year of birth", "MISSING"))
 
@@ -373,13 +373,43 @@ def test_answer_with_ledger_keeps_items_and_clears_missing() -> None:
     assert (j.answer, j.missing, j.ledger) == ("Daresbury", "", (("birthplace", "FOUND"),))
 
 
-def test_broken_ledger_entries_are_skipped() -> None:
+def test_broken_ledger_entries_are_skipped_and_flagged() -> None:
     raw = ledger_reply("RETRIEVE", [{"item": "a"}, "text", {"item": "", "status": "MISSING"}, {"item": "b", "status": "maybe"}], missing="m")
     j = parse_judgment(raw, allow_retrieve=True, ledger=True)
     assert j.ledger == () and j.missing == "m"
+    # 장부 형식 오류는 따로 센다. 판정·답 형식(parse_ok)과 판정 값은 그대로다
+    assert (j.ledger_ok, j.parse_ok, j.decision) == (False, True, "RETRIEVE")
+
+
+def test_one_bad_ledger_entry_flags_ledger_but_keeps_good_items() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "a", "status": "MISSING"}, {"item": "b", "status": "maybe"}], missing="m")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.missing, j.ledger_ok, j.parse_ok) == ((("a", "MISSING"),), "a", False, True)
+
+
+@pytest.mark.parametrize("ledger_value", ["absent", None, "a list in text", {"item": "a", "status": "MISSING"}])
+def test_missing_or_non_list_ledger_is_a_ledger_format_error(ledger_value: object) -> None:
+    data = {"reasoning": "r", "decision": "ANSWER", "missing": "", "answer": "Daresbury"}
+    if ledger_value != "absent":
+        data["ledger"] = ledger_value
+    j = parse_judgment(json.dumps(data), allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.ledger_ok) == ((), False)
+    assert (j.decision, j.answer, j.parse_ok) == ("ANSWER", "Daresbury", True)
+
+
+def test_empty_ledger_list_is_well_formed() -> None:
+    j = parse_judgment(ledger_reply("ANSWER", [], answer="7"), allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.ledger_ok, j.parse_ok) == ((), True, True)
+
+
+def test_broken_json_with_ledger_fails_both_checks() -> None:
+    j = parse_judgment('{"reasoning": "r", "ledger": [', allow_retrieve=True, ledger=True)
+    assert (j.parse_ok, j.ledger_ok, j.decision, j.answer) == (False, False, "ANSWER", "")
 
 
 def test_ledger_ignored_when_option_off() -> None:
     raw = ledger_reply("RETRIEVE", [{"item": "x", "status": "MISSING"}], missing="model missing")
     j = parse_judgment(raw, allow_retrieve=True)
-    assert j.ledger == () and j.missing == "model missing"
+    assert j.ledger == () and j.missing == "model missing" and j.ledger_ok
+    # 장부를 끄면 장부 칸이 없어도 형식 오류가 아니다
+    assert parse_judgment(reply("ANSWER", "7"), allow_retrieve=True).ledger_ok
