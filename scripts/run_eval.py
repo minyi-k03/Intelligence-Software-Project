@@ -49,6 +49,9 @@ PIPELINE_FACTORIES: dict[str, str] = {
     "m_minus_compress": "src.meba.graph:build_m_minus_compress",
     "m_minus_cap": "src.meba.graph:build_m_minus_cap",
     "m_minus_loop_breaker": "src.meba.graph:build_m_minus_loop_breaker",
+    # 조건부 부품 시험용 (C-5, 개발 세트)
+    "m_ledger": "src.meba.conditional.ledger:build_m_ledger",
+    "m_dynamic_m": "src.meba.conditional.dynamic_m:build_m_dynamic_m",
 }
 
 DEFAULT_PIPELINES = ("p0", "p0_raw", "p1", "m")

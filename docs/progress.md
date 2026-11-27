@@ -80,7 +80,7 @@ TBD #4·#5는 팀 3인 동의로 확정되어 [INTERFACES.md](INTERFACES.md) §6
 | 실험 C-2 `k`×`m` 측정 | 11/19 | ✅ | [기록](experiments/2026-11-15-c-compress-m.md), `scripts/measure_compress_m.py`. 권장 m: k=3 → 6, k=5 → 7, k=8 → 10 |
 | PR C-3 근거 판정·재검색 | 11/23 | ✅ | `src/meba/judge.py`, `src/meba/requery.py`, `tests/test_judge.py`, `tests/test_requery.py`. 가짜 모델로 검증, 실제 Ollama 확인은 통합(A-5b)·C-4에서 |
 | 실험 C-4 JSON vs 태그 | 11/25 | ✅ | [기록](experiments/2026-11-23-c-judge-format.md), `scripts/compare_judge_format.py`. JSON 유지 (잘림·파싱 실패 모두 0%, 정확도 30% 동일). 근거 판정 과잉 기권이 커서 프롬프트 후속 작업 필요 |
-| PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ⬜ | |
+| PR C-5 조건부 `ledger`·`dynamic_m` | 11/27 | ✅ | **둘 다 기각, M은 동결 v2 그대로.** dev `r8`(같은 세션, `m`·`m_ledger`·`m_dynamic_m`). `ledger`: 정답 31 → 29, HotpotQA 5 → 4·SQuAD 답 있음 5 → 2로 공통 조건 위반, HotpotQA 호출 ×1.44(첫 판정 RETRIEVE 6 → 25, 재검색 뒤 기권 증가). `dynamic_m`: 정오 60/60 동일, 입력 토큰 ×0.953으로 기준 ×0.9 미달. 코드는 기본 꺼짐으로 남김: `src/meba/conditional/`, `judge.py`의 `ledger` 옵션(끄면 v2와 같음), `graph.py` 한 줄(A 모듈), `run_eval.py` 등록(A 모듈). [기록](experiments/2026-11-26-c-conditional.md) |
 
 ### D · 심동섭
 

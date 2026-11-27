@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -313,3 +314,102 @@ def test_broken_output_is_not_scored_correct_on_unanswerable_items() -> None:
         assert not score_unanswerable(j.answer)
     explicit = parse_judgment(reply("ABSTAIN"), allow_retrieve=False)
     assert score_unanswerable(explicit.answer)
+
+
+# --- 근거 장부 상세화 (조건부 부품, C-5) ----------------------------------------
+
+
+def ledger_reply(decision: str, ledger: list[dict[str, str]], missing: str = "", answer: str = "") -> str:
+    return json.dumps({"reasoning": "r", "ledger": ledger, "decision": decision, "missing": missing, "answer": answer})
+
+
+def test_ledger_schema_puts_ledger_between_reasoning_and_decision() -> None:
+    schema = judge_schema(allow_retrieve=True, ledger=True)
+    assert list(schema["properties"]) == ["reasoning", "ledger", "decision", "missing", "answer"]
+    assert schema["required"] == ["reasoning", "ledger", "decision", "missing", "answer"]
+    assert schema["properties"]["ledger"]["items"]["properties"]["status"]["enum"] == ["FOUND", "MISSING"]
+
+
+def test_ledger_off_keeps_schema_and_prompt_unchanged() -> None:
+    assert judge_schema(allow_retrieve=True) == judge_schema(allow_retrieve=True, ledger=False)
+    assert "ledger" not in judge_schema(allow_retrieve=True)["properties"]
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=True)
+    assert '"ledger"' not in system and "MISSING item" not in system
+
+
+def test_ledger_prompt_asks_for_items_and_missing_item() -> None:
+    (_, system), _ = build_judge_messages("q", "e", allow_retrieve=True, ledger=True)
+    assert '"ledger": list each piece of information the question needs' in system
+    assert "copy the MISSING item to search for next from the ledger" in system
+    assert system.index('"reasoning"') < system.index('"ledger"') < system.index('"decision"')
+
+
+def test_ledger_is_json_only() -> None:
+    with pytest.raises(ValueError):
+        build_judge_messages("q", "e", allow_retrieve=True, output_format="tag", ledger=True)
+
+
+def test_retrieve_with_ledger_uses_missing_items() -> None:
+    raw = ledger_reply(
+        "RETRIEVE",
+        [{"item": "author of Wonderland", "status": "FOUND"}, {"item": "birthplace of Lewis Carroll", "status": "MISSING"},
+         {"item": "year of birth", "status": "missing"}],
+        missing="something else",
+    )
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert j.decision == "RETRIEVE" and j.parse_ok and j.ledger_ok
+    assert j.missing == "birthplace of Lewis Carroll; year of birth"
+    assert j.ledger == (("author of Wonderland", "FOUND"), ("birthplace of Lewis Carroll", "MISSING"), ("year of birth", "MISSING"))
+
+
+def test_retrieve_with_ledger_but_no_missing_item_keeps_model_missing() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "author", "status": "FOUND"}], missing="birthplace of the author")
+    assert parse_judgment(raw, allow_retrieve=True, ledger=True).missing == "birthplace of the author"
+
+
+def test_answer_with_ledger_keeps_items_and_clears_missing() -> None:
+    raw = ledger_reply("ANSWER", [{"item": "birthplace", "status": "FOUND"}], missing="x", answer="Daresbury")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert (j.answer, j.missing, j.ledger) == ("Daresbury", "", (("birthplace", "FOUND"),))
+
+
+def test_broken_ledger_entries_are_skipped_and_flagged() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "a"}, "text", {"item": "", "status": "MISSING"}, {"item": "b", "status": "maybe"}], missing="m")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert j.ledger == () and j.missing == "m"
+    # 장부 형식 오류는 따로 센다. 판정·답 형식(parse_ok)과 판정 값은 그대로다
+    assert (j.ledger_ok, j.parse_ok, j.decision) == (False, True, "RETRIEVE")
+
+
+def test_one_bad_ledger_entry_flags_ledger_but_keeps_good_items() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "a", "status": "MISSING"}, {"item": "b", "status": "maybe"}], missing="m")
+    j = parse_judgment(raw, allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.missing, j.ledger_ok, j.parse_ok) == ((("a", "MISSING"),), "a", False, True)
+
+
+@pytest.mark.parametrize("ledger_value", ["absent", None, "a list in text", {"item": "a", "status": "MISSING"}])
+def test_missing_or_non_list_ledger_is_a_ledger_format_error(ledger_value: object) -> None:
+    data = {"reasoning": "r", "decision": "ANSWER", "missing": "", "answer": "Daresbury"}
+    if ledger_value != "absent":
+        data["ledger"] = ledger_value
+    j = parse_judgment(json.dumps(data), allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.ledger_ok) == ((), False)
+    assert (j.decision, j.answer, j.parse_ok) == ("ANSWER", "Daresbury", True)
+
+
+def test_empty_ledger_list_is_well_formed() -> None:
+    j = parse_judgment(ledger_reply("ANSWER", [], answer="7"), allow_retrieve=True, ledger=True)
+    assert (j.ledger, j.ledger_ok, j.parse_ok) == ((), True, True)
+
+
+def test_broken_json_with_ledger_fails_both_checks() -> None:
+    j = parse_judgment('{"reasoning": "r", "ledger": [', allow_retrieve=True, ledger=True)
+    assert (j.parse_ok, j.ledger_ok, j.decision, j.answer) == (False, False, "ANSWER", "")
+
+
+def test_ledger_ignored_when_option_off() -> None:
+    raw = ledger_reply("RETRIEVE", [{"item": "x", "status": "MISSING"}], missing="model missing")
+    j = parse_judgment(raw, allow_retrieve=True)
+    assert j.ledger == () and j.missing == "model missing" and j.ledger_ok
+    # 장부를 끄면 장부 칸이 없어도 형식 오류가 아니다
+    assert parse_judgment(reply("ANSWER", "7"), allow_retrieve=True).ledger_ok
