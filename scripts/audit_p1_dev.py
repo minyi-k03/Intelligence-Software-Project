@@ -23,6 +23,7 @@ except ImportError:  # 표준 라이브러리만 있는 환경에서도 집계 �
     BaseCallbackHandler = object  # type: ignore[assignment,misc]
 
 from src.baselines.p1_react import run_p1
+from src.config.llm import ChatOllama
 from src.config.settings import REPO_ROOT, get_settings
 from src.eval.logger import RunLog, RunMeta, collect_environment, verify_frozen_hashes
 from src.eval.runner import load_items, run_item
@@ -166,6 +167,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     frozen_dir = REPO_ROOT / "data" / "frozen"
     data_hashes = verify_frozen_hashes(frozen_dir, REPO_ROOT / "data" / "README.md")
     cfg = get_settings(args.config)
+    if ChatOllama is None:
+        parser.error("langchain-ollama가 없어 P1 재측정을 시작할 수 없다")
     items = load_items(frozen_dir / "dev.jsonl")
     if args.verify is not None:
         items = items[: args.verify]

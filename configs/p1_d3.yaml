@@ -18,6 +18,8 @@ retrieval:
 compress:
   m: 7
   window: 1
+judge:
+  format: "json"
 p1:
   max_steps: 7
 run:

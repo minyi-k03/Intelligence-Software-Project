@@ -49,6 +49,7 @@ PIPELINE_FACTORIES: dict[str, str] = {
     "m_minus_compress": "src.meba.graph:build_m_minus_compress",
     "m_minus_cap": "src.meba.graph:build_m_minus_cap",
     "m_minus_loop_breaker": "src.meba.graph:build_m_minus_loop_breaker",
+    "m_concise": "src.meba.conditional.concise:build_m_concise",
 }
 
 DEFAULT_PIPELINES = ("p0", "p0_raw", "p1", "m")

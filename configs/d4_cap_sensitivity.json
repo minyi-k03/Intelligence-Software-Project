@@ -1,0 +1,8 @@
+{
+  "base_config": "configs/default.yaml",
+  "conditions": [
+    {"judge_cap": 96, "round": "r20"},
+    {"judge_cap": 160, "round": "r21"},
+    {"judge_cap": 256, "round": "r22"}
+  ]
+}
