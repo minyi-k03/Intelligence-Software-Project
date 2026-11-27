@@ -174,7 +174,7 @@ Final answer: <short answer or UNANSWERABLE>
 |---|---|
 | P0-raw | 없음 (질문만). 기권 불가, 참고용이라 결과표에 그대로 표시 |
 | P0 | ① + ② (최소 지시문이지만 기권 문구와 형식 줄은 포함) |
-| P1 | ① + ② (최종 답 단계) |
+| P1 | ① + ② + 도구 안내(`P1_TOOL_GUIDANCE`: 사실 질문은 먼저 `bm25_search` 호출, 검색 전 `UNANSWERABLE` 출력 금지; 산술 문제는 계산기 검증) |
 | M 수학 경로 | ① + ② |
 | M 근거 판정 | ①만. 답은 §5 JSON의 `answer` 필드로 받으므로 `Final answer:` 줄을 쓰지 않는다 |
 
